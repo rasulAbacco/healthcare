@@ -1,120 +1,263 @@
 // client/src/components/Sidebar.jsx
+// Replace your existing Sidebar.jsx with this file
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import {
+  LayoutDashboard,
+  UserPlus,
+  Users,
+  CalendarClock,
+  BedDouble,
+  Stethoscope,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+  Activity,
+  Menu,
+  X,
+  Cross,
+  Pill,
+  History,
+  Clock,
+  Plus,
+} from "lucide-react";
+import { useState, useEffect } from "react";
 
 const menuConfig = {
   "receptionist-OPD": [
-    { label: "Dashboard", icon: "📊", to: "/opd-dashboard" },
-    { label: "Register Patient", icon: "➕", to: "/opd/register" },
-    { label: "All Patients", icon: "👥", to: "/opd/patients" },
-    { label: "Follow-Ups", icon: "📅", to: "/opd/followups" },
+    { label: "Dashboard",        icon: LayoutDashboard, to: "/opd-dashboard" },
+    { label: "Register Patient", icon: UserPlus,        to: "/opd/register"  },
+    { label: "All Patients",     icon: Users,           to: "/opd/patients"  },
+    { label: "Follow-Ups",       icon: CalendarClock,   to: "/opd/followups" },
   ],
   "receptionist-IPD": [
-    { label: "Dashboard", icon: "📊", to: "/ipd-dashboard" },
-    { label: "Admit Patient", icon: "🛏️", to: "/ipd/admit" },
-    { label: "All Patients", icon: "👥", to: "/ipd/patients" },
+    { label: "Dashboard",     icon: LayoutDashboard, to: "/ipd-dashboard" },
+    { label: "Admit Patient", icon: BedDouble,       to: "/ipd/admit"     },
+    { label: "All Patients",  icon: Users,           to: "/ipd/patients"  },
   ],
   "doctor-OPD": [
-    { label: "OPD Patients", icon: "👥", to: "/doctor/opd" },
-    { label: "Follow-Ups", icon: "📅", to: "/doctor/opd/followups" },
+    { label: "OPD Patients", icon: Stethoscope,   to: "/doctor/opd"           },
+    { label: "Follow-Ups",   icon: CalendarClock, to: "/doctor/opd/followups" },
   ],
   "doctor-IPD": [
-    { label: "IPD Patients", icon: "🛏️", to: "/doctor/ipd" },
+    { label: "IPD Patients", icon: BedDouble, to: "/doctor/ipd" },
+  ],
+  "pharmacy-Pharmacy": [
+    { label: "Dashboard",     icon: LayoutDashboard, to: "/pharmacy-dashboard"  },
+    { label: "Add Medicine",  icon: Plus,            to: "/pharmacy/add"        },
+    { label: "All Medicines", icon: Pill,            to: "/pharmacy/medicines"  },
+    { label: "Stock History", icon: History,         to: "/pharmacy/stock"      },
+    { label: "Expiry Alerts", icon: Clock,           to: "/pharmacy/expiry"     },
   ],
 };
 
 export default function Sidebar({ collapsed, setCollapsed }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const key = user ? `${user.role}-${user.module}` : "";
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const key   = user ? `${user.role}-${user.module}` : "";
   const links = menuConfig[key] || [];
+
+  const isOPD      = user?.module === "OPD";
+  const isPharmacy = user?.module === "Pharmacy";
 
   const handleLogout = () => {
     logout();
     navigate("/login");
   };
 
-  return (
-    <aside className={`${collapsed ? "w-16" : "w-64"} transition-all duration-300 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen fixed left-0 top-0 z-30 shadow-sm dark:shadow-none`}>
-      
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [key]);
+
+  const NavContent = ({ mini }) => (
+    <>
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-slate-200 dark:border-slate-800">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center flex-shrink-0 shadow-lg shadow-teal-500/30">
-          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+      <div className={`flex items-center gap-3 px-4 py-5 border-b border-slate-200 dark:border-slate-800 flex-shrink-0 ${mini ? "justify-center px-0" : ""}`}>
+        <div className="relative flex-shrink-0">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-lg ${
+            isPharmacy
+              ? "bg-gradient-to-br from-emerald-500 to-teal-400 shadow-emerald-500/25"
+              : "bg-gradient-to-br from-teal-500 to-cyan-400 shadow-teal-500/25"
+          }`}>
+            {isPharmacy
+              ? <Pill className="w-4 h-4 text-white" strokeWidth={2.5} />
+              : <Cross className="w-4 h-4 text-white" strokeWidth={2.5} />
+            }
+          </div>
+          <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-white dark:border-slate-900" />
         </div>
-        {!collapsed && (
-          <div>
-            <div className="text-slate-800 dark:text-white font-bold text-sm leading-tight">MediCore</div>
-            <div className="text-teal-600 dark:text-teal-400 text-xs font-medium">HMS</div>
+        {!mini && (
+          <div className="min-w-0">
+            <p className="text-slate-900 dark:text-white font-bold text-sm leading-none tracking-tight">MediCore</p>
+            <p className={`text-[11px] font-semibold mt-0.5 tracking-widest uppercase ${
+              isPharmacy ? "text-emerald-600 dark:text-emerald-400" : "text-teal-600 dark:text-teal-400"
+            }`}>
+              {isPharmacy ? "Pharmacy" : "HMS"}
+            </p>
           </div>
         )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="ml-auto text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={collapsed ? "M9 5l7 7-7 7" : "M15 19l-7-7 7-7"} />
-          </svg>
-        </button>
+        {!mini && (
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="ml-auto p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hidden lg:flex"
+            aria-label="Toggle sidebar"
+          >
+            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </button>
+        )}
       </div>
 
-      {/* Module Badge */}
-      {!collapsed && user && (
-        <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800/50">
-          <div className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1.5 ${
-            user.module === "OPD"
-              ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20"
-              : "bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-500/20"
+      {/* Module badge */}
+      {!mini && user && (
+        <div className="px-4 pt-4 pb-2 flex-shrink-0">
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold w-full ${
+            isPharmacy
+              ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+              : isOPD
+              ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+              : "bg-violet-50 dark:bg-violet-500/10 border-violet-200 dark:border-violet-500/20 text-violet-700 dark:text-violet-400"
           }`}>
-            <span>{user.module === "OPD" ? "🏥" : "🛏️"}</span>
-            {user.module} Module
+            {isPharmacy ? <Pill className="w-3.5 h-3.5 flex-shrink-0" />
+              : isOPD ? <Stethoscope className="w-3.5 h-3.5 flex-shrink-0" />
+              : <BedDouble className="w-3.5 h-3.5 flex-shrink-0" />}
+            <span>{user.module} Module</span>
+            <span className="ml-auto capitalize text-[10px] opacity-70 font-medium">{user.role}</span>
           </div>
         </div>
       )}
 
-      {/* Nav Links */}
-      <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {links.map((link) => (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-sm font-medium ${
-                isActive
-                  ? "bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-200 dark:border-teal-500/20"
-                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white border border-transparent"
-              }`
-            }
-          >
-            <span className="text-base flex-shrink-0">{link.icon}</span>
-            {!collapsed && <span>{link.label}</span>}
-          </NavLink>
-        ))}
+      {/* Nav links */}
+      <nav className={`flex-1 overflow-y-auto py-3 ${mini ? "px-2" : "px-3"}`}>
+        {!mini && (
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-600 px-3 mb-2">Navigation</p>
+        )}
+        <ul className="space-y-0.5 list-none m-0 p-0">
+          {links.map((link) => {
+            const Icon = link.icon;
+            return (
+              <li key={link.to}>
+                <NavLink
+                  to={link.to}
+                  onClick={() => setMobileOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-sm font-medium group relative ${
+                      mini ? "justify-center px-2.5" : ""
+                    } ${
+                      isActive
+                        ? isPharmacy
+                          ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-500/20 shadow-sm"
+                          : "bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-200/80 dark:border-teal-500/20 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white border border-transparent"
+                    }`
+                  }
+                  title={mini ? link.label : undefined}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <Icon
+                        className={`flex-shrink-0 transition-colors ${mini ? "w-5 h-5" : "w-4 h-4"} ${
+                          isActive
+                            ? isPharmacy ? "text-emerald-600 dark:text-emerald-400" : "text-teal-600 dark:text-teal-400"
+                            : "text-slate-400 dark:text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300"
+                        }`}
+                        strokeWidth={isActive ? 2.5 : 2}
+                      />
+                      {!mini && <span className="truncate">{link.label}</span>}
+                      {mini && isActive && (
+                        <span className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${isPharmacy ? "bg-emerald-500" : "bg-teal-500"}`} />
+                      )}
+                      {mini && (
+                        <span className="pointer-events-none absolute left-full ml-3 z-50 px-2.5 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0 transition-all duration-150 shadow-lg">
+                          {link.label}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              </li>
+            );
+          })}
+        </ul>
       </nav>
 
       {/* User + Logout */}
-      <div className="px-3 py-4 border-t border-slate-200 dark:border-slate-800">
-        {!collapsed && user && (
-          <div className="flex items-center gap-2.5 px-3 py-2 mb-2 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+      <div className="border-t border-slate-200 dark:border-slate-800 flex-shrink-0 p-3 space-y-1">
+        {!mini && user && (
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 mb-2">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm ${
+              isPharmacy ? "bg-gradient-to-br from-emerald-500 to-teal-400" : "bg-gradient-to-br from-teal-500 to-cyan-400"
+            }`}>
               {user.username[0].toUpperCase()}
             </div>
-            <div>
-              <div className="text-slate-800 dark:text-white text-xs font-semibold capitalize">{user.username}</div>
-              <div className="text-slate-500 dark:text-slate-500 text-xs capitalize">{user.role}</div>
+            <div className="min-w-0 flex-1">
+              <p className="text-slate-800 dark:text-white text-xs font-semibold capitalize truncate leading-tight">{user.username}</p>
+              <p className="text-slate-400 dark:text-slate-500 text-[11px] capitalize leading-tight mt-0.5">{user.role}</p>
             </div>
+            <Activity className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
           </div>
         )}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-all text-sm font-medium border border-transparent hover:border-red-100 dark:hover:border-red-500/20"
+          className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-all text-sm font-medium border border-transparent hover:border-red-100 dark:hover:border-red-500/20 group relative ${mini ? "justify-center px-2.5" : ""}`}
+          title={mini ? "Logout" : undefined}
         >
-          <span className="text-base flex-shrink-0">🚪</span>
-          {!collapsed && "Logout"}
+          <LogOut className={`flex-shrink-0 transition-colors group-hover:text-red-500 ${mini ? "w-5 h-5" : "w-4 h-4"}`} strokeWidth={2} />
+          {!mini && <span>Logout</span>}
+          {mini && (
+            <span className="pointer-events-none absolute left-full ml-3 z-50 px-2.5 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0 transition-all duration-150 shadow-lg">
+              Logout
+            </span>
+          )}
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="lg:hidden fixed top-4 left-4 z-40 w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+        aria-label="Open menu"
+      >
+        <Menu className="w-4 h-4" />
+      </button>
+
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity" onClick={() => setMobileOpen(false)} aria-hidden="true" />
+      )}
+
+      <aside
+        className={`lg:hidden fixed inset-y-0 left-0 z-50 w-72 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xl transition-transform duration-300 ease-out ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        aria-label="Mobile navigation"
+      >
+        <button
+          onClick={() => setMobileOpen(false)}
+          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+          aria-label="Close menu"
+        >
+          <X className="w-4 h-4" />
+        </button>
+        <NavContent mini={false} />
+      </aside>
+
+      <aside
+        className={`hidden lg:flex flex-col fixed inset-y-0 left-0 z-30 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out shadow-sm ${collapsed ? "w-[68px]" : "w-64"}`}
+        aria-label="Desktop navigation"
+      >
+        <NavContent mini={collapsed} />
+        {collapsed && (
+          <button
+            onClick={() => setCollapsed(false)}
+            className="absolute -right-3 top-[72px] w-6 h-6 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 shadow-sm transition-all hover:scale-110"
+            aria-label="Expand sidebar"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </aside>
+    </>
   );
 }

@@ -1,46 +1,34 @@
-//client\src\context\AuthContext.jsx
+// client/src/context/AuthContext.jsx
+// Replace your existing AuthContext.jsx with this file
 import { createContext, useContext, useState } from "react";
-
-const AUTH_KEY = "hms_user";
 
 const AuthContext = createContext(null);
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    try {
-      const stored = localStorage.getItem(AUTH_KEY);
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
+const USERS = {
+  receptionist: { password: "123", role: "receptionist", modules: ["OPD", "IPD"] },
+  doctor:       { password: "123", role: "doctor",       modules: ["OPD", "IPD"] },
+  pharmacy:     { password: "123", role: "pharmacy",     modules: ["Pharmacy"] },
+};
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
 
   const login = (username, password, module) => {
-    if (username === "receptionist" && password === "123") {
-      const userData = { username, role: "receptionist", module };
-      localStorage.setItem(AUTH_KEY, JSON.stringify(userData));
-      setUser(userData);
-      return { success: true, role: "receptionist", module };
-    }
-    if (username === "doctor" && password === "123") {
-      const userData = { username, role: "doctor", module };
-      localStorage.setItem(AUTH_KEY, JSON.stringify(userData));
-      setUser(userData);
-      return { success: true, role: "doctor", module };
-    }
-    return { success: false };
+    const found = USERS[username];
+    if (!found || found.password !== password) return { success: false };
+    if (!found.modules.includes(module)) return { success: false };
+    const u = { username, role: found.role, module };
+    setUser(u);
+    return { success: true, role: found.role, module };
   };
 
-  const logout = () => {
-    localStorage.removeItem(AUTH_KEY);
-    setUser(null);
-  };
+  const logout = () => setUser(null);
 
   return (
     <AuthContext.Provider value={{ user, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
-};
+}
 
 export const useAuth = () => useContext(AuthContext);

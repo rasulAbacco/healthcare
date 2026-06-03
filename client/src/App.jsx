@@ -1,9 +1,11 @@
 // client/src/App.jsx
+// Replace your existing App.jsx with this file
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useState } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { opdPatients as initOPD, ipdPatients as initIPD } from "./data/dummyData";
+import { pharmacyMedicines as initPharmacy } from "./data/pharmacyData";
 
 import Login from "./pages/login/Login";
 import Layout from "./components/Layout";
@@ -21,10 +23,17 @@ import IPDPatientForm from "./pages/ipd/IPDPatientForm";
 import { DoctorOPDDashboard } from "./pages/doctor/DoctorOPDDashboard";
 import { DoctorIPDDashboard } from "./pages/doctor/DoctorIPDDashboard";
 
+import PharmacyDashboard from "./pages/pharmacy/PharmacyDashboard";
+import PharmacyMedicineList from "./pages/pharmacy/PharmacyMedicineList";
+import PharmacyMedicineForm from "./pages/pharmacy/PharmacyMedicineForm";
+import PharmacyStockHistory from "./pages/pharmacy/PharmacyStockHistory";
+import PharmacyExpiryAlerts from "./pages/pharmacy/PharmacyExpiryAlerts";
+
 function AppRoutes() {
   const { user } = useAuth();
   const [opdPatients, setOpdPatients] = useState(initOPD);
   const [ipdPatients, setIpdPatients] = useState(initIPD);
+  const [medicines, setMedicines]     = useState(initPharmacy);
 
   return (
     <Routes>
@@ -38,8 +47,8 @@ function AppRoutes() {
         </ProtectedRoute>
       }>
         <Route path="/opd-dashboard" element={<OPDDashboard />} />
-        <Route path="/opd/register" element={<OPDPatientForm patients={opdPatients} setPatients={setOpdPatients} />} />
-        <Route path="/opd/patients" element={<OPDPatientList patients={opdPatients} setPatients={setOpdPatients} />} />
+        <Route path="/opd/register"  element={<OPDPatientForm patients={opdPatients} setPatients={setOpdPatients} />} />
+        <Route path="/opd/patients"  element={<OPDPatientList patients={opdPatients} setPatients={setOpdPatients} />} />
         <Route path="/opd/followups" element={<OPDFollowUps patients={opdPatients} />} />
       </Route>
 
@@ -50,8 +59,8 @@ function AppRoutes() {
         </ProtectedRoute>
       }>
         <Route path="/ipd-dashboard" element={<IPDDashboard />} />
-        <Route path="/ipd/admit" element={<IPDPatientForm patients={ipdPatients} setPatients={setIpdPatients} />} />
-        <Route path="/ipd/patients" element={<IPDPatientList patients={ipdPatients} setPatients={setIpdPatients} />} />
+        <Route path="/ipd/admit"     element={<IPDPatientForm patients={ipdPatients} setPatients={setIpdPatients} />} />
+        <Route path="/ipd/patients"  element={<IPDPatientList patients={ipdPatients} setPatients={setIpdPatients} />} />
       </Route>
 
       {/* Doctor OPD */}
@@ -60,7 +69,7 @@ function AppRoutes() {
           <Layout />
         </ProtectedRoute>
       }>
-        <Route path="/doctor/opd" element={<DoctorOPDDashboard patients={opdPatients} />} />
+        <Route path="/doctor/opd"          element={<DoctorOPDDashboard patients={opdPatients} />} />
         <Route path="/doctor/opd/followups" element={<OPDFollowUps patients={opdPatients} />} />
       </Route>
 
@@ -71,6 +80,19 @@ function AppRoutes() {
         </ProtectedRoute>
       }>
         <Route path="/doctor/ipd" element={<DoctorIPDDashboard patients={ipdPatients} />} />
+      </Route>
+
+      {/* Pharmacy */}
+      <Route element={
+        <ProtectedRoute role="pharmacy" module="Pharmacy">
+          <Layout />
+        </ProtectedRoute>
+      }>
+        <Route path="/pharmacy-dashboard" element={<PharmacyDashboard medicines={medicines} />} />
+        <Route path="/pharmacy/add"       element={<PharmacyMedicineForm medicines={medicines} setMedicines={setMedicines} />} />
+        <Route path="/pharmacy/medicines" element={<PharmacyMedicineList medicines={medicines} setMedicines={setMedicines} />} />
+        <Route path="/pharmacy/stock"     element={<PharmacyStockHistory medicines={medicines} />} />
+        <Route path="/pharmacy/expiry"    element={<PharmacyExpiryAlerts medicines={medicines} />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />
