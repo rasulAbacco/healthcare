@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import authRoutes from "./auth/auth.routes.js";
 import opdRoutes from "./opd/opd.routes.js";
+import categoryRoutes from "./pharmacy/category.routes.js";
+import medicineRoutes from "./pharmacy/medicine.routes.js";
 
 const app = express();
 
@@ -22,5 +24,9 @@ app.use("/api/auth", authRoutes);
 
 // OPD routes
 app.use("/api/opd/patients", opdRoutes);
+
+// Pharmacy routes
+app.use("/api/pharmacy/categories", categoryRoutes);
+app.use("/api/pharmacy/medicines", medicineRoutes);
 
 export default app;

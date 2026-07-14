@@ -98,3 +98,51 @@ model OPDPatient {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  createdAt DateTime   @default(now())
+  medicines Medicine[]
+}
+
+model Medicine {
+  id            String   @id @default(cuid())
+  serialNumber  String   @unique // manually typed by pharmacist, e.g. "MED-001"
+  drugName      String
+  genericName   String?
+  categoryId    String
+  category      Category @relation(fields: [categoryId], references: [id])
+  manufacturer  String?
+  batchNumber   String
+  purchasePrice Float
+  sellingPrice  Float
+  quantity      Int      @default(0)
+  reorderLevel  Int      @default(0)
+  expiryDate    DateTime @db.Date
+  supplierName  String?
+  notes         String?  @db.Text
+
+  stockHistory StockHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum StockAction {
+  ADD
+  REDUCE
+  ADJUST
+}
+
+model StockHistory {
+  id         String      @id @default(cuid())
+  medicineId String
+  medicine   Medicine    @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  date       DateTime    @db.Date
+  action     StockAction
+  quantity   Int // positive for Add, negative for Reduce — matches current UI convention
+  reason     String
+
+  createdAt DateTime @default(now())
+}

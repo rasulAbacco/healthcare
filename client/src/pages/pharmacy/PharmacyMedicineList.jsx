@@ -1,38 +1,45 @@
 // client/src/pages/pharmacy/PharmacyMedicineList.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   PageHeader, SearchBar, TableCard, Th, Td, ActionBtn,
   DeleteModal, EmptyState, Pagination,
 } from "../../components/UI";
-import { PharmacyStatusBadge } from "./PharmacyDashboard";
-import PharmacyMedicineForm from "./PharmacyMedicineForm";
+import { PharmacyStatusBadge, getMedicineStatus } from "./PharmacyDashboard";
 import PharmacyMedicineDetails from "./PharmacyMedicineDetails";
-import { Plus, Search, Calendar, Layers, Package, Tag } from "lucide-react";
+import { Plus, Search, Calendar, Layers, Tag, Loader2 } from "lucide-react";
+import { api } from "../../lib/api";
 
 const PER_PAGE = 8;
 
-function getMedicineStatus(med) {
-  const today = new Date();
-  const expiry = new Date(med.expiryDate);
-  const diffDays = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-  if (med.quantity === 0) return "Out of Stock";
-  if (diffDays <= 0) return "Expired";
-  if (diffDays <= 30) return "Expiring Soon";
-  if (med.quantity <= med.reorderLevel) return "Low Stock";
-  return "In Stock";
-}
-
 const STATUS_FILTERS = ["", "In Stock", "Low Stock", "Out of Stock", "Expiring Soon", "Expired"];
 
-export default function PharmacyMedicineList({ medicines, setMedicines }) {
+export default function PharmacyMedicineList() {
+  const [medicines, setMedicines] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState("");
+  const [deleting, setDeleting]   = useState(false);
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage]                 = useState(1);
   const [deleteId, setDeleteId]         = useState(null);
-  const [editing, setEditing]           = useState(null);
   const [viewing, setViewing]           = useState(null);
   const navigate = useNavigate();
+
+  const fetchMedicines = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { medicines: data } = await api.get("/pharmacy/medicines");
+      setMedicines(data);
+    } catch (err) {
+      setError(err.message || "Could not load medicines.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchMedicines(); }, []);
 
   const filtered = medicines.filter(m => {
     const matchName   = m.drugName.toLowerCase().includes(search.toLowerCase())
@@ -42,19 +49,40 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
     return matchName && matchStatus;
   });
 
-  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+  const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
-  const handleDelete = (id) => { setMedicines(ms => ms.filter(m => m.id !== id)); setDeleteId(null); };
+  const handleDelete = async (id) => {
+    setDeleting(true);
+    try {
+      await api.del(`/pharmacy/medicines/${id}`);
+      setMedicines(ms => ms.filter(m => m.id !== id));
+      setDeleteId(null);
+    } catch (err) {
+      setError(err.message || "Could not delete this medicine.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
-  if (editing) return <PharmacyMedicineForm medicines={medicines} setMedicines={setMedicines} editMedicine={editing} onDone={() => setEditing(null)} />;
-  if (viewing) return <PharmacyMedicineDetails medicine={viewing} setMedicines={setMedicines} onBack={() => setViewing(null)} />;
+  if (viewing) {
+    return (
+      <PharmacyMedicineDetails
+        medicine={viewing}
+        onBack={() => setViewing(null)}
+        onUpdated={(updated) => {
+          setMedicines(ms => ms.map(m => m.id === updated.id ? updated : m));
+          setViewing(updated);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="w-full px-2 sm:px-4 max-w-7xl mx-auto">
       <PageHeader
         title="Medicine Inventory"
-        subtitle={`${filtered.length} records`}
+        subtitle={loading ? "Loading..." : `${filtered.length} records`}
         action={
           <button
             onClick={() => navigate("/pharmacy/add")}
@@ -67,7 +95,13 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
         }
       />
 
-      {/* Filters Area - Responsive layout fixes applied */}
+      {error && (
+        <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl px-4 py-3 text-rose-600 dark:text-rose-400 text-sm font-medium mb-4">
+          {error}
+        </div>
+      )}
+
+      {/* Filters Area */}
       <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center">
         <div className="flex-1">
           <SearchBar value={search} onChange={s => { setSearch(s); setPage(1); }} placeholder="Search drug, generic name, batch..." />
@@ -77,7 +111,7 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
             <button
               key={s}
               onClick={() => { setStatusFilter(s); setPage(1); }}
-              className={`px-3 py-2 rounded-xl text-xs font-medium transition-colors border whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl text-xs font-medium transition-colors border whitespace-nowrap flex-shrink-0 ${
                 statusFilter === s
                   ? "bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30"
                   : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
@@ -89,14 +123,19 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
         </div>
       </div>
 
-      {/* Empty Fallback Wrapper */}
-      {paginated.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500 text-sm font-medium">
+            <Loader2 className="w-5 h-5 animate-spin" /> Loading medicines...
+          </div>
+        </div>
+      ) : paginated.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8">
           <EmptyState icon={Search} message="No medicines found" />
         </div>
       ) : (
         <>
-          {/* 1. DESKTOP MODE: Displayed inside large width viewports */}
+          {/* 1. DESKTOP MODE */}
           <div className="hidden lg:block">
             <TableCard>
               <thead>
@@ -145,7 +184,7 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
                       <Td>
                         <div className="flex gap-1">
                           <ActionBtn type="view"   onClick={() => setViewing(m)} />
-                          <ActionBtn type="edit"   onClick={() => setEditing(m)} />
+                          <ActionBtn type="edit"   onClick={() => navigate(`/pharmacy/medicines/${m.id}/edit`)} />
                           <ActionBtn type="delete" onClick={() => setDeleteId(m.id)} />
                         </div>
                       </Td>
@@ -156,14 +195,12 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
             </TableCard>
           </div>
 
-          {/* 2. MOBILE CARD GRID MODE: Rendered on smaller touchscreens */}
+          {/* 2. MOBILE CARD GRID MODE */}
           <div className="block lg:hidden space-y-3">
             {paginated.map(m => {
               const status = getMedicineStatus(m);
               return (
                 <div key={m.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-                  
-                  {/* Title Info Block */}
                   <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <button onClick={() => setViewing(m)} className="flex-shrink-0">
@@ -179,7 +216,7 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
                       </button>
                       <div className="min-w-0">
                         <h4 className="text-slate-800 dark:text-white font-semibold text-sm truncate">{m.drugName}</h4>
-                        <p className="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5">{m.genericName || "No generic signature"}</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5">{m.genericName || "No generic name"}</p>
                       </div>
                     </div>
                     <div className="flex-shrink-0 pl-1">
@@ -187,7 +224,6 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
                     </div>
                   </div>
 
-                  {/* Metadata Indicators Row */}
                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400 mb-3 bg-slate-50/50 dark:bg-slate-800/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/40">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <Layers className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
@@ -203,7 +239,6 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
                     </div>
                   </div>
 
-                  {/* Pricing and Stocks Row Split */}
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">Purchase Price:</span>
@@ -227,18 +262,16 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
                     </div>
                   </div>
 
-                  {/* Actions and Triggers */}
                   <div className="flex justify-between items-center">
                     <button onClick={() => setViewing(m)} className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold hover:underline">
-                      Inspect Matrix →
+                      View Details →
                     </button>
                     <div className="flex gap-1 flex-shrink-0">
                       <ActionBtn type="view"   onClick={() => setViewing(m)} />
-                      <ActionBtn type="edit"   onClick={() => setEditing(m)} />
+                      <ActionBtn type="edit"   onClick={() => navigate(`/pharmacy/medicines/${m.id}/edit`)} />
                       <ActionBtn type="delete" onClick={() => setDeleteId(m.id)} />
                     </div>
                   </div>
-
                 </div>
               );
             })}
@@ -253,8 +286,9 @@ export default function PharmacyMedicineList({ medicines, setMedicines }) {
       {deleteId && (
         <DeleteModal
           name={medicines.find(m => m.id === deleteId)?.drugName}
+          itemLabel="Medicine"
           onConfirm={() => handleDelete(deleteId)}
-          onCancel={() => setDeleteId(null)}
+          onCancel={() => !deleting && setDeleteId(null)}
         />
       )}
     </div>
