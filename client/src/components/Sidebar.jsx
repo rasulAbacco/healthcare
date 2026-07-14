@@ -76,7 +76,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
   const NavContent = ({ mini }) => (
     <>
       {/* Logo */}
-      <div className={`flex items-center gap-3 px-4 py-5 border-b border-slate-200 dark:border-slate-800 flex-shrink-0 ${mini ? "justify-center px-0" : ""}`}>
+      <div className={`flex items-center gap-3 px-4 py-5 border-b border-slate-200 dark:border-slate-800 flex-shrink-0 ${mini ? "flex-col gap-2 px-0" : ""}`}>
         <div className="relative flex-shrink-0">
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-lg ${
             isPharmacy
@@ -100,15 +100,15 @@ export default function Sidebar({ collapsed, setCollapsed }) {
             </p>
           </div>
         )}
-        {!mini && (
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="ml-auto p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hidden lg:flex"
-            aria-label="Toggle sidebar"
-          >
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
-        )}
+        {/* Collapse/expand toggle — kept inline (not absolutely positioned outside
+            the sidebar) so it's never clipped by an ancestor's overflow-x-hidden */}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className={`p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hidden lg:flex ${mini ? "" : "ml-auto"}`}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
       </div>
 
       {/* Module badge */}
@@ -167,9 +167,6 @@ export default function Sidebar({ collapsed, setCollapsed }) {
                         strokeWidth={isActive ? 2.5 : 2}
                       />
                       {!mini && <span className="truncate">{link.label}</span>}
-                      {mini && isActive && (
-                        <span className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${isPharmacy ? "bg-emerald-500" : "bg-teal-500"}`} />
-                      )}
                       {mini && (
                         <span className="pointer-events-none absolute left-full ml-3 z-50 px-2.5 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0 transition-all duration-150 shadow-lg">
                           {link.label}
@@ -250,15 +247,6 @@ export default function Sidebar({ collapsed, setCollapsed }) {
         aria-label="Desktop navigation"
       >
         <NavContent mini={collapsed} />
-        {collapsed && (
-          <button
-            onClick={() => setCollapsed(false)}
-            className="absolute -right-3 top-[72px] w-6 h-6 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 shadow-sm transition-all hover:scale-110"
-            aria-label="Expand sidebar"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        )}
       </aside>
     </>
   );

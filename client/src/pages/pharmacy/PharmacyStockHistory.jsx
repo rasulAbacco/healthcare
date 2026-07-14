@@ -1,10 +1,29 @@
 // client/src/pages/pharmacy/PharmacyStockHistory.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PageHeader, SearchBar, EmptyState } from "../../components/UI";
-import { History, TrendingUp, TrendingDown, RefreshCw, Calendar, Tag, FileText } from "lucide-react";
+import { History, TrendingUp, TrendingDown, RefreshCw, Calendar, Tag, FileText, Loader2 } from "lucide-react";
+import { api } from "../../lib/api";
 
-export default function PharmacyStockHistory({ medicines }) {
+export default function PharmacyStockHistory() {
+  const [medicines, setMedicines] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState("");
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const { medicines: data } = await api.get("/pharmacy/medicines");
+        setMedicines(data);
+      } catch (err) {
+        setError(err.message || "Could not load stock history.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   // Flatten all stock history across all medicines
   const allHistory = medicines.flatMap(m =>
@@ -29,7 +48,13 @@ export default function PharmacyStockHistory({ medicines }) {
     <div className="w-full px-2 sm:px-4 max-w-7xl mx-auto">
       <PageHeader title="Stock History" subtitle="All stock transactions across medicines" />
 
-      {/* Summary - FIX: Shifted grid properties from absolute grid-cols-3 to dynamic grid-cols-1 baseline */}
+      {error && (
+        <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl px-4 py-3 text-rose-600 dark:text-rose-400 text-sm font-medium mb-4">
+          {error}
+        </div>
+      )}
+
+      {/* Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         {[
           { label: "Total Transactions", val: allHistory.length,   color: "text-teal-600 dark:text-teal-400",   bg: "bg-teal-50 dark:bg-teal-500/10 border-teal-200 dark:border-teal-500/20" },
@@ -47,14 +72,19 @@ export default function PharmacyStockHistory({ medicines }) {
         <SearchBar value={search} onChange={setSearch} placeholder="Search medicine, action, reason..." />
       </div>
 
-      {/* Main Content Conditional Block */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500 text-sm font-medium">
+            <Loader2 className="w-5 h-5 animate-spin" /> Loading stock history...
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8">
           <EmptyState icon={History} message="No stock history found" />
         </div>
       ) : (
         <>
-          {/* 1. DESKTOP LOG TABLE: Displayed safely on md viewports and wider */}
+          {/* 1. DESKTOP LOG TABLE */}
           <div className="hidden md:block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none transition-colors duration-300">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[640px]">
@@ -98,17 +128,15 @@ export default function PharmacyStockHistory({ medicines }) {
             </div>
           </div>
 
-          {/* 2. MOBILE TIMELINE CARDS: Displayed on mobile frames and hidden on desktop sizes */}
+          {/* 2. MOBILE TIMELINE CARDS */}
           <div className="block md:hidden space-y-3">
             {filtered.map((h, idx) => (
               <div key={`mob-${h.medicineId}-${h.id}-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-                
-                {/* Header Row: Drug Name + Quantity Offset */}
                 <div className="flex justify-between items-start gap-2 border-b border-slate-100 dark:border-slate-800/60 pb-2.5 mb-2.5">
                   <div className="min-w-0">
                     <h4 className="text-slate-800 dark:text-white font-semibold text-sm truncate">{h.drugName}</h4>
                     <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-400 font-mono">
-                      <Tag className="w-3 h-3 text-slate-400" />
+                      <Tag className="w-3 h-3 text-slate-400 flex-shrink-0" />
                       <span>B: {h.batchNumber}</span>
                     </div>
                   </div>
@@ -120,7 +148,6 @@ export default function PharmacyStockHistory({ medicines }) {
                   </div>
                 </div>
 
-                {/* Info Block: Timeline Tags and Audit Stamp */}
                 <div className="space-y-2 text-xs">
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-slate-400 flex items-center gap-1.5">
@@ -153,7 +180,6 @@ export default function PharmacyStockHistory({ medicines }) {
                     </span>
                   </div>
                 </div>
-
               </div>
             ))}
           </div>

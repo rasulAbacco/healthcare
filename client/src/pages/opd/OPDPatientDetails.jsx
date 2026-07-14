@@ -1,7 +1,8 @@
 // client/src/pages/opd/OPDPatientDetails.jsx
 import { useState } from "react";
-import { ArrowLeft, User, CreditCard, CalendarClock, FileText, Stethoscope, Bell, Save } from "lucide-react";
+import { ArrowLeft, User, CreditCard, CalendarClock, FileText, Stethoscope, Bell, Save, Loader2 } from "lucide-react";
 import { SectionCard, StatusBadge } from "../../components/UI";
+import { api } from "../../lib/api";
 
 const followUpStatusColors = {
   Pending:   "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20",
@@ -16,29 +17,53 @@ const reminderStatusColors = {
   "Not Set": "text-slate-400 dark:text-slate-500",
 };
 
-export default function OPDPatientDetails({ patient: initP, onBack, setPatients, readOnly = false }) {
+// `onUpdated(updatedPatient)` is called after any successful save, so the
+// parent list can keep its copy of this patient in sync.
+export default function OPDPatientDetails({ patient: initP, onBack, onUpdated, readOnly = false }) {
   const [p, setP] = useState(initP);
   const [doctorForm, setDoctorForm] = useState({
     diagnosis: initP.diagnosis || "",
     prescription: initP.prescription || "",
     doctorNotes: initP.doctorNotes || "",
   });
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [error, setError] = useState("");
 
   if (!p) return null;
 
-  const handleDoctorSave = () => {
-    const updated = { ...p, ...doctorForm };
+  const persist = async (patch) => {
+    const { patient: updated } = await api.put(`/opd/patients/${p.id}`, { ...p, ...patch });
     setP(updated);
-    if (setPatients) setPatients(ps => ps.map(pt => pt.id === p.id ? updated : pt));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (onUpdated) onUpdated(updated);
+    return updated;
   };
 
-  const handleFollowUpStatus = (status) => {
-    const updated = { ...p, followUpStatus: status };
-    setP(updated);
-    if (setPatients) setPatients(ps => ps.map(pt => pt.id === p.id ? updated : pt));
+  const handleDoctorSave = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await persist(doctorForm);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setError(err.message || "Could not save notes.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFollowUpStatus = async (status) => {
+    setStatusSaving(true);
+    setError("");
+    try {
+      await persist({ followUpStatus: status });
+    } catch (err) {
+      setError(err.message || "Could not update follow-up status.");
+    } finally {
+      setStatusSaving(false);
+    }
   };
 
   return (
@@ -53,9 +78,15 @@ export default function OPDPatientDetails({ patient: initP, onBack, setPatients,
         </button>
         <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
         <span className="font-mono text-xs text-teal-600 dark:text-teal-400 font-bold">{p.serialNumber}</span>
-        <h1 className="text-slate-800 dark:text-white font-bold text-xl">{p.name}</h1>
+        <h1 className="text-slate-800 dark:text-white font-bold text-xl break-words">{p.name}</h1>
         <StatusBadge status={p.condition || "Stable"} />
       </div>
+
+      {error && (
+        <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl px-4 py-3 text-rose-600 dark:text-rose-400 text-sm font-medium mb-4 max-w-5xl">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-5xl">
         <SectionCard title="Personal Information" icon={User}>
@@ -71,7 +102,7 @@ export default function OPDPatientDetails({ patient: initP, onBack, setPatients,
             ].map(item => (
               <div key={item.label}>
                 <div className="text-slate-400 dark:text-slate-500 text-xs mb-0.5">{item.label}</div>
-                <div className="text-slate-800 dark:text-white font-medium">{item.val || "—"}</div>
+                <div className="text-slate-800 dark:text-white font-medium break-words">{item.val || "—"}</div>
               </div>
             ))}
           </div>
@@ -115,14 +146,18 @@ export default function OPDPatientDetails({ patient: initP, onBack, setPatients,
 
             {/* Follow-Up Status */}
             <div>
-              <div className="text-slate-400 dark:text-slate-500 text-xs mb-1.5">Follow-Up Status</div>
+              <div className="text-slate-400 dark:text-slate-500 text-xs mb-1.5 flex items-center gap-2">
+                Follow-Up Status
+                {statusSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+              </div>
               {!readOnly ? (
                 <div className="flex gap-2 flex-wrap">
                   {["Pending", "Completed", "Missed"].map(s => (
                     <button
                       key={s}
+                      disabled={statusSaving}
                       onClick={() => handleFollowUpStatus(s)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all disabled:opacity-60 ${
                         p.followUpStatus === s
                           ? followUpStatusColors[s] + " ring-1 ring-offset-1 ring-current"
                           : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
@@ -142,7 +177,7 @@ export default function OPDPatientDetails({ patient: initP, onBack, setPatients,
             {p.followUpDesc && (
               <div>
                 <div className="text-slate-400 dark:text-slate-500 text-xs mb-0.5">Follow-Up Notes</div>
-                <div className="text-slate-600 dark:text-slate-300">{p.followUpDesc}</div>
+                <div className="text-slate-600 dark:text-slate-300 break-words">{p.followUpDesc}</div>
               </div>
             )}
           </div>
@@ -174,7 +209,7 @@ export default function OPDPatientDetails({ patient: initP, onBack, setPatients,
 
         {p.notes && (
           <SectionCard title="Clinical Notes" icon={FileText}>
-            <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">{p.notes}</p>
+            <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed break-words">{p.notes}</p>
           </SectionCard>
         )}
 
@@ -215,14 +250,15 @@ export default function OPDPatientDetails({ patient: initP, onBack, setPatients,
               </div>
               <button
                 onClick={handleDoctorSave}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                disabled={saving}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-70 ${
                   saved
                     ? "bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30"
                     : "bg-teal-50 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 border border-teal-200 dark:border-teal-500/30 hover:bg-teal-100 dark:hover:bg-teal-500/30"
                 }`}
               >
-                <Save className="w-4 h-4" />
-                {saved ? "Saved!" : "Save Notes"}
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {saving ? "Saving..." : saved ? "Saved!" : "Save Notes"}
               </button>
             </div>
           ) : (
@@ -235,7 +271,7 @@ export default function OPDPatientDetails({ patient: initP, onBack, setPatients,
               ].map(item => (
                 <div key={item.label}>
                   <div className="text-slate-400 dark:text-slate-500 text-xs mb-0.5">{item.label}</div>
-                  <div className="text-slate-700 dark:text-slate-300">{item.val || <span className="text-slate-300 dark:text-slate-600 italic">Not filled yet</span>}</div>
+                  <div className="text-slate-700 dark:text-slate-300 break-words">{item.val || <span className="text-slate-300 dark:text-slate-600 italic">Not filled yet</span>}</div>
                 </div>
               ))}
             </div>

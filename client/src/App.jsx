@@ -5,7 +5,6 @@ import { useState } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { opdPatients as initOPD, ipdPatients as initIPD } from "./data/dummyData";
-import { pharmacyMedicines as initPharmacy } from "./data/pharmacyData";
 
 import Login from "./pages/login/Login";
 import Layout from "./components/Layout";
@@ -34,7 +33,6 @@ function AppRoutes() {
   const { user, initializing } = useAuth();
   const [opdPatients, setOpdPatients] = useState(initOPD);
   const [ipdPatients, setIpdPatients] = useState(initIPD);
-  const [medicines, setMedicines]     = useState(initPharmacy);
 
   // While we're verifying a stored token against the backend on first load,
   // hold off rendering routes — otherwise a valid session flashes a redirect
@@ -65,9 +63,10 @@ function AppRoutes() {
         </ProtectedRoute>
       }>
         <Route path="/opd-dashboard" element={<OPDDashboard />} />
-        <Route path="/opd/register"  element={<OPDPatientForm patients={opdPatients} setPatients={setOpdPatients} />} />
-        <Route path="/opd/patients"  element={<OPDPatientList patients={opdPatients} setPatients={setOpdPatients} />} />
-        <Route path="/opd/followups" element={<OPDFollowUps patients={opdPatients} />} />
+        <Route path="/opd/register"  element={<OPDPatientForm />} />
+        <Route path="/opd/patients/:id/edit" element={<OPDPatientForm />} />
+        <Route path="/opd/patients"  element={<OPDPatientList />} />
+        <Route path="/opd/followups" element={<OPDFollowUps />} />
       </Route>
 
       {/* Receptionist IPD */}
@@ -107,11 +106,12 @@ function AppRoutes() {
           <Layout />
         </ProtectedRoute>
       }>
-        <Route path="/pharmacy-dashboard" element={<PharmacyDashboard medicines={medicines} />} />
-        <Route path="/pharmacy/add"       element={<PharmacyMedicineForm medicines={medicines} setMedicines={setMedicines} />} />
-        <Route path="/pharmacy/medicines" element={<PharmacyMedicineList medicines={medicines} setMedicines={setMedicines} />} />
-        <Route path="/pharmacy/stock"     element={<PharmacyStockHistory medicines={medicines} />} />
-        <Route path="/pharmacy/expiry"    element={<PharmacyExpiryAlerts medicines={medicines} />} />
+        <Route path="/pharmacy-dashboard" element={<PharmacyDashboard />} />
+        <Route path="/pharmacy/add"       element={<PharmacyMedicineForm />} />
+        <Route path="/pharmacy/medicines/:id/edit" element={<PharmacyMedicineForm />} />
+        <Route path="/pharmacy/medicines" element={<PharmacyMedicineList />} />
+        <Route path="/pharmacy/stock"     element={<PharmacyStockHistory />} />
+        <Route path="/pharmacy/expiry"    element={<PharmacyExpiryAlerts />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />

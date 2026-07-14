@@ -1,71 +1,58 @@
 // client/src/pages/pharmacy/PharmacyMedicineDetails.jsx
 import { useState } from "react";
+import { PharmacyStatusBadge, getMedicineStatus } from "./PharmacyDashboard";
 import { SectionCard } from "../../components/UI";
-import { PharmacyStatusBadge } from "./PharmacyDashboard";
 import {
   ArrowLeft, Pill, Package, DollarSign, Truck, FileText,
-  Plus, Minus, RefreshCw, History,
+  Plus, Minus, RefreshCw, History, Loader2,
 } from "lucide-react";
+import { api } from "../../lib/api";
 
-function getMedicineStatus(med) {
-  const today = new Date();
-  const expiry = new Date(med.expiryDate);
-  const diffDays = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-  if (med.quantity === 0) return "Out of Stock";
-  if (diffDays <= 0) return "Expired";
-  if (diffDays <= 30) return "Expiring Soon";
-  if (med.quantity <= med.reorderLevel) return "Low Stock";
-  return "In Stock";
-}
-
-export default function PharmacyMedicineDetails({ medicine: initMed, setMedicines, onBack }) {
+// onUpdated(updatedMedicine) is called after any successful stock change so
+// the parent list can keep its copy of this medicine in sync.
+export default function PharmacyMedicineDetails({ medicine: initMed, onBack, onUpdated }) {
   const [med, setMed] = useState(initMed);
   const [stockAction, setStockAction] = useState("");
   const [stockQty, setStockQty] = useState("");
   const [stockReason, setStockReason] = useState("");
   const [stockError, setStockError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const status = getMedicineStatus(med);
 
-  const handleStockUpdate = () => {
+  const ACTION_LABELS = { add: "Add Stock", reduce: "Reduce Stock", adjust: "Stock Adjustment" };
+
+  const handleStockUpdate = async () => {
     const qty = parseInt(stockQty);
     if (!qty || qty <= 0) { setStockError("Enter a valid quantity."); return; }
     if (!stockReason.trim()) { setStockError("Enter a reason."); return; }
-
-    let newQty;
-    let actionLabel;
-    if (stockAction === "add") { newQty = med.quantity + qty; actionLabel = "Add Stock"; }
-    else if (stockAction === "reduce") {
-      if (qty > med.quantity) { setStockError("Cannot reduce more than current stock."); return; }
-      newQty = med.quantity - qty;
-      actionLabel = "Reduce Stock";
-    } else {
-      newQty = qty;
-      actionLabel = "Stock Adjustment";
+    if (stockAction === "reduce" && qty > med.quantity) {
+      setStockError("Cannot reduce more than current stock.");
+      return;
     }
 
-    const histEntry = {
-      id: Date.now(),
-      date: new Date().toISOString().split("T")[0],
-      action: actionLabel,
-      quantity: stockAction === "reduce" ? -qty : qty,
-      reason: stockReason,
-    };
-
-    const updated = {
-      ...med,
-      quantity: newQty,
-      stockHistory: [...(med.stockHistory || []), histEntry],
-    };
-    setMed(updated);
-    if (setMedicines) setMedicines(ms => ms.map(m => m.id === med.id ? updated : m));
-    setStockQty(""); setStockReason(""); setStockAction(""); setStockError("");
+    setSaving(true);
+    setStockError("");
+    try {
+      const { medicine: updated } = await api.post(`/pharmacy/medicines/${med.id}/stock`, {
+        action: ACTION_LABELS[stockAction],
+        quantity: qty,
+        reason: stockReason.trim(),
+      });
+      setMed(updated);
+      if (onUpdated) onUpdated(updated);
+      setStockQty(""); setStockReason(""); setStockAction("");
+    } catch (err) {
+      setStockError(err.message || "Could not update stock.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const expiryDiff = Math.ceil((new Date(med.expiryDate) - new Date()) / (1000 * 60 * 60 * 24));
 
   return (
-    <div>
+    <div className="w-full px-2 sm:px-4 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         <button
@@ -75,11 +62,11 @@ export default function PharmacyMedicineDetails({ medicine: initMed, setMedicine
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
         <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
-        <h1 className="text-slate-800 dark:text-white font-bold text-xl">{med.drugName}</h1>
+        <h1 className="text-slate-800 dark:text-white font-bold text-xl break-words">{med.drugName}</h1>
         <PharmacyStatusBadge status={status} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-6xl mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         {/* Drug Info */}
         <SectionCard title="Drug Information" icon={Pill}>
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -93,7 +80,7 @@ export default function PharmacyMedicineDetails({ medicine: initMed, setMedicine
             ].map(item => (
               <div key={item.label}>
                 <div className="text-slate-400 dark:text-slate-500 text-xs mb-0.5">{item.label}</div>
-                <div className="text-slate-800 dark:text-white font-medium">{item.val || "—"}</div>
+                <div className="text-slate-800 dark:text-white font-medium break-words">{item.val || "—"}</div>
               </div>
             ))}
           </div>
@@ -153,7 +140,7 @@ export default function PharmacyMedicineDetails({ medicine: initMed, setMedicine
             {med.notes && (
               <div>
                 <div className="text-slate-400 dark:text-slate-500 text-xs mb-0.5">Storage / Usage Notes</div>
-                <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed bg-slate-50 dark:bg-slate-800/50 rounded-xl px-3 py-2 border border-slate-100 dark:border-slate-800">
+                <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed bg-slate-50 dark:bg-slate-800/50 rounded-xl px-3 py-2 border border-slate-100 dark:border-slate-800 break-words">
                   {med.notes}
                 </p>
               </div>
@@ -163,7 +150,7 @@ export default function PharmacyMedicineDetails({ medicine: initMed, setMedicine
       </div>
 
       {/* Stock Management */}
-      <div className="max-w-6xl mb-4">
+      <div className="mb-4">
         <SectionCard title="Stock Management" icon={RefreshCw}>
           <div className="flex flex-wrap gap-3 mb-4">
             {[
@@ -215,9 +202,11 @@ export default function PharmacyMedicineDetails({ medicine: initMed, setMedicine
               )}
               <button
                 onClick={handleStockUpdate}
-                className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-400 text-white font-semibold px-5 py-2 rounded-xl hover:scale-[1.02] transition-transform shadow-lg shadow-emerald-500/20 text-sm"
+                disabled={saving}
+                className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-400 text-white font-semibold px-5 py-2 rounded-xl hover:scale-[1.02] transition-transform shadow-lg shadow-emerald-500/20 text-sm disabled:opacity-60 disabled:hover:scale-100"
               >
-                <RefreshCw className="w-4 h-4" /> Update Stock
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {saving ? "Updating..." : "Update Stock"}
               </button>
             </div>
           )}
@@ -225,7 +214,7 @@ export default function PharmacyMedicineDetails({ medicine: initMed, setMedicine
       </div>
 
       {/* Stock History */}
-      <div className="max-w-6xl">
+      <div>
         <SectionCard title="Stock History" icon={History}>
           {(!med.stockHistory || med.stockHistory.length === 0) ? (
             <div className="text-center py-8 text-slate-400 dark:text-slate-500 text-sm">No stock history available.</div>
@@ -244,9 +233,9 @@ export default function PharmacyMedicineDetails({ medicine: initMed, setMedicine
                 <tbody>
                   {[...med.stockHistory].reverse().map(h => (
                     <tr key={h.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800/50">{h.date}</td>
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800/50 whitespace-nowrap">{h.date}</td>
                       <td className="px-4 py-3 border-b border-slate-100 dark:border-slate-800/50">
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap ${
                           h.action === "Add Stock"
                             ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20"
                             : h.action === "Reduce Stock"

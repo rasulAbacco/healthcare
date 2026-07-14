@@ -1,13 +1,13 @@
 // client/src/pages/opd/OPDPatientList.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   PageHeader, SearchBar, TableCard, Th, Td, ActionBtn,
   DeleteModal, EmptyState, Pagination, StatusBadge,
 } from "../../components/UI";
-import OPDPatientForm from "./OPDPatientForm";
 import OPDPatientDetails from "./OPDPatientDetails";
-import { UserPlus, SlidersHorizontal, X, Search, Phone, MapPin, Calendar, Clock } from "lucide-react";
+import { UserPlus, SlidersHorizontal, X, Search, Phone, MapPin, Calendar, Loader2 } from "lucide-react";
+import { api } from "../../lib/api";
 
 const PER_PAGE = 7;
 
@@ -17,14 +17,32 @@ const followUpStatusColors = {
   Missed:    "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20",
 };
 
-export default function OPDPatients({ patients, setPatients, readOnly = false }) {
+export default function OPDPatients({ readOnly = false }) {
+  const [patients, setPatients]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState("");
+  const [deleting, setDeleting]   = useState(false);
   const [search, setSearch]       = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [page, setPage]           = useState(1);
   const [deleteId, setDeleteId]   = useState(null);
-  const [editing, setEditing]     = useState(null);
   const [viewing, setViewing]     = useState(null);
   const navigate = useNavigate();
+
+  const fetchPatients = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { patients: data } = await api.get("/opd/patients");
+      setPatients(data);
+    } catch (err) {
+      setError(err.message || "Could not load patients.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchPatients(); }, []);
 
   const filtered = patients.filter(p => {
     const matchName = p.name.toLowerCase().includes(search.toLowerCase())
@@ -33,19 +51,41 @@ export default function OPDPatients({ patients, setPatients, readOnly = false })
     return matchName && matchDate;
   });
 
-  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+  const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
-  const handleDelete = (id) => { setPatients(ps => ps.filter(p => p.id !== id)); setDeleteId(null); };
+  const handleDelete = async (id) => {
+    setDeleting(true);
+    try {
+      await api.del(`/opd/patients/${id}`);
+      setPatients(ps => ps.filter(p => p.id !== id));
+      setDeleteId(null);
+    } catch (err) {
+      setError(err.message || "Could not delete this patient.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
-  if (editing) return <OPDPatientForm patients={patients} setPatients={setPatients} editPatient={editing} onDone={() => setEditing(null)} />;
-  if (viewing) return <OPDPatientDetails patient={viewing} onBack={() => setViewing(null)} setPatients={setPatients} readOnly={readOnly} />;
+  if (viewing) {
+    return (
+      <OPDPatientDetails
+        patient={viewing}
+        onBack={() => setViewing(null)}
+        onUpdated={(updated) => {
+          setPatients(ps => ps.map(p => p.id === updated.id ? updated : p));
+          setViewing(updated);
+        }}
+        readOnly={readOnly}
+      />
+    );
+  }
 
   return (
     <div className="w-full px-2 sm:px-4 max-w-7xl mx-auto">
       <PageHeader
         title="OPD Patients"
-        subtitle={`${filtered.length} records`}
+        subtitle={loading ? "Loading..." : `${filtered.length} records`}
         action={
           !readOnly && (
             <button
@@ -60,6 +100,12 @@ export default function OPDPatients({ patients, setPatients, readOnly = false })
         }
       />
 
+      {error && (
+        <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl px-4 py-3 text-rose-600 dark:text-rose-400 text-sm font-medium mb-4">
+          {error}
+        </div>
+      )}
+
       {/* Filters Stack vertically on mobile, horizontally on desktop */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4 w-full">
         <div className="flex-1 w-full">
@@ -71,7 +117,7 @@ export default function OPDPatients({ patients, setPatients, readOnly = false })
             <input
               type="date"
               value={dateFilter}
-              onChange={e => { dateFilter(e.target.value); setPage(1); }}
+              onChange={e => { setDateFilter(e.target.value); setPage(1); }}
               className="pl-9 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-slate-800 dark:text-white text-sm focus:outline-none focus:border-teal-500 dark:focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 transition-colors"
             />
           </div>
@@ -86,8 +132,13 @@ export default function OPDPatients({ patients, setPatients, readOnly = false })
         </div>
       </div>
 
-      {/* Global Fallback for Empty State */}
-      {paginated.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500 text-sm font-medium">
+            <Loader2 className="w-5 h-5 animate-spin" /> Loading patients...
+          </div>
+        </div>
+      ) : paginated.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8">
           <EmptyState icon={Search} message="No patients found" />
         </div>
@@ -138,7 +189,7 @@ export default function OPDPatients({ patients, setPatients, readOnly = false })
                       <Td>
                         <div className="flex gap-1">
                           <ActionBtn type="view"   onClick={() => setViewing(p)} />
-                          <ActionBtn type="edit"   onClick={() => setEditing(p)} />
+                          <ActionBtn type="edit"   onClick={() => navigate(`/opd/patients/${p.id}/edit`)} />
                           <ActionBtn type="delete" onClick={() => setDeleteId(p.id)} />
                         </div>
                       </Td>
@@ -167,7 +218,7 @@ export default function OPDPatients({ patients, setPatients, readOnly = false })
                     </div>
                   </div>
                   {p.followUpStatus && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${followUpStatusColors[p.followUpStatus] || followUpStatusColors["Pending"]}`}>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${followUpStatusColors[p.followUpStatus] || followUpStatusColors["Pending"]}`}>
                       {p.followUpStatus}
                     </span>
                   )}
@@ -176,15 +227,15 @@ export default function OPDPatients({ patients, setPatients, readOnly = false })
                 {/* Patient Demographics */}
                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400 mb-3">
                   <div className="flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5 text-slate-400" />
+                    <Phone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                     <span className="truncate">{p.phone}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                     <span className="truncate">{p.place}</span>
                   </div>
                   <div className="flex items-center gap-1.5 col-span-2">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                     <span>Visited: {p.visitDate}</span>
                   </div>
                 </div>
@@ -213,7 +264,7 @@ export default function OPDPatients({ patients, setPatients, readOnly = false })
                   {!readOnly && (
                     <div className="flex gap-1.5">
                       <ActionBtn type="view"   onClick={() => setViewing(p)} />
-                      <ActionBtn type="edit"   onClick={() => setEditing(p)} />
+                      <ActionBtn type="edit"   onClick={() => navigate(`/opd/patients/${p.id}/edit`)} />
                       <ActionBtn type="delete" onClick={() => setDeleteId(p.id)} />
                     </div>
                   )}
@@ -232,7 +283,7 @@ export default function OPDPatients({ patients, setPatients, readOnly = false })
         <DeleteModal
           name={patients.find(p => p.id === deleteId)?.name}
           onConfirm={() => handleDelete(deleteId)}
-          onCancel={() => setDeleteId(null)}
+          onCancel={() => !deleting && setDeleteId(null)}
         />
       )}
     </div>

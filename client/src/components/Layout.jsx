@@ -4,7 +4,28 @@ import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, Stethoscope, UserRound, Pill } from "lucide-react";
+
+const ROLE_STYLES = {
+  doctor: {
+    icon: Stethoscope,
+    wrap: "bg-violet-50 dark:bg-violet-500/15 border-violet-200 dark:border-violet-500/20",
+    iconWrap: "bg-violet-100 dark:bg-violet-500/25 text-violet-600 dark:text-violet-400",
+    text: "text-violet-700 dark:text-violet-400",
+  },
+  receptionist: {
+    icon: UserRound,
+    wrap: "bg-blue-50 dark:bg-blue-500/15 border-blue-200 dark:border-blue-500/20",
+    iconWrap: "bg-blue-100 dark:bg-blue-500/25 text-blue-600 dark:text-blue-400",
+    text: "text-blue-700 dark:text-blue-400",
+  },
+  pharmacy: {
+    icon: Pill,
+    wrap: "bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/20",
+    iconWrap: "bg-emerald-100 dark:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400",
+    text: "text-emerald-700 dark:text-emerald-400",
+  },
+};
 
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(false);
@@ -46,18 +67,20 @@ export default function Layout() {
               })}
             </span>
 
-            {user && (
-              <div
-                className={`text-xs font-semibold px-3 py-1.5 rounded-full border hidden sm:flex items-center gap-1.5 ${
-                  user.role === "doctor"
-                    ? "bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-500/20"
-                    : "bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20"
-                }`}
-              >
-                <span>{user.role === "doctor" ? "👨‍⚕️" : "💼"}</span>
-                <span className="capitalize">{user.role}</span>
-              </div>
-            )}
+            {user && (() => {
+              const style = ROLE_STYLES[user.role] || ROLE_STYLES.receptionist;
+              const RoleIcon = style.icon;
+              return (
+                <div
+                  className={`pl-1 pr-3 py-1 rounded-full border hidden sm:flex items-center gap-2 ${style.wrap}`}
+                >
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${style.iconWrap}`}>
+                    <RoleIcon className="w-3.5 h-3.5" strokeWidth={2.5} />
+                  </span>
+                  <span className={`text-xs font-semibold capitalize ${style.text}`}>{user.role}</span>
+                </div>
+              );
+            })()}
 
             <button
               onClick={toggle}

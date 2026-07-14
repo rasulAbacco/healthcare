@@ -1,16 +1,33 @@
 // client/src/pages/opd/OPDDashboard.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { opdPatients as initialData } from "../../data/dummyData";
 import { StatCard, PageHeader, StatusBadge } from "../../components/UI";
-import { Users, Stethoscope, Banknote, Smartphone, UserPlus, TrendingUp, CalendarClock, Bell, ArrowRight } from "lucide-react";
+import { Users, Stethoscope, Banknote, Smartphone, UserPlus, TrendingUp, CalendarClock, Bell, Loader2 } from "lucide-react";
+import { api } from "../../lib/api";
 
 export default function OPDDashboard() {
-  const [patients] = useState(initialData);
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState("");
   const navigate = useNavigate();
 
-  const today = patients.filter(p => p.visitDate === "2025-01-15");
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const { patients: data } = await api.get("/opd/patients");
+        setPatients(data);
+      } catch (err) {
+        setError(err.message || "Could not load dashboard data.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
   const todayStr = new Date().toISOString().split("T")[0];
+  const today = patients.filter(p => p.visitDate === todayStr);
 
   const totalFee   = today.reduce((s, p) => s + p.fee, 0);
   const totalCash  = today.reduce((s, p) => s + p.cash, 0);
@@ -31,6 +48,16 @@ export default function OPDDashboard() {
   // Pending reminders
   const pendingReminders = patients.filter(p => p.reminderEnabled && p.reminderStatus === "Pending" && p.followUpDate >= todayStr);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500 text-sm font-medium">
+          <Loader2 className="w-5 h-5 animate-spin" /> Loading dashboard...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-3 sm:p-6 max-w-7xl mx-auto w-full overflow-hidden">
       <PageHeader
@@ -47,15 +74,21 @@ export default function OPDDashboard() {
         }
       />
 
-      {/* Stats - FIX: Changed grid-cols-2 to grid-cols-1 below sm breakpoint */}
+      {error && (
+        <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl px-4 py-3 text-rose-600 dark:text-rose-400 text-sm font-medium mb-6">
+          {error}
+        </div>
+      )}
+
+      {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
-        <StatCard label="Patients Today"           value={today.length}                               icon={Users}       color="blue"   sub="Jan 15, 2025" />
+        <StatCard label="Patients Today"           value={today.length}                               icon={Users}       color="blue"   sub={todayStr} />
         <StatCard label="Consultation Collection" value={`₹${totalFee.toLocaleString()}`}            icon={Stethoscope} color="green"  sub="Today's fees" />
         <StatCard label="Cash Collection"         value={`₹${totalCash.toLocaleString()}`}           icon={Banknote}    color="yellow" sub="Cash payments" />
         <StatCard label="UPI Collection"          value={`₹${totalUPI.toLocaleString()}`}            icon={Smartphone}  color="purple" sub="UPI payments" />
       </div>
 
-      {/* Today's Follow-Ups, Incoming, Reminders row - FIX: Added md:grid-cols-3 */}
+      {/* Today's Follow-Ups, Incoming, Reminders row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {/* Today's Follow-Ups */}
         <div className="bg-amber-50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/20 rounded-2xl p-4 sm:p-5">
@@ -63,7 +96,7 @@ export default function OPDDashboard() {
             <h3 className="text-amber-800 dark:text-amber-400 font-semibold text-sm flex items-center gap-2">
               <CalendarClock className="w-4 h-4" /> Today's Follow-Ups
             </h3>
-            <button onClick={() => navigate("/opd/followups")} className="text-amber-600 dark:text-amber-400 text-xs font-medium hover:underline">
+            <button onClick={() => navigate("/opd/followups")} className="text-amber-600 dark:text-amber-400 text-xs font-medium hover:underline flex-shrink-0">
               View All →
             </button>
           </div>
@@ -92,7 +125,7 @@ export default function OPDDashboard() {
             <h3 className="text-blue-800 dark:text-blue-400 font-semibold text-sm flex items-center gap-2">
               <Users className="w-4 h-4" /> Incoming (7 days)
             </h3>
-            <button onClick={() => navigate("/opd/followups")} className="text-blue-600 dark:text-blue-400 text-xs font-medium hover:underline">
+            <button onClick={() => navigate("/opd/followups")} className="text-blue-600 dark:text-blue-400 text-xs font-medium hover:underline flex-shrink-0">
               View All →
             </button>
           </div>
@@ -121,7 +154,7 @@ export default function OPDDashboard() {
             <h3 className="text-violet-800 dark:text-violet-400 font-semibold text-sm flex items-center gap-2">
               <Bell className="w-4 h-4" /> Pending Reminders
             </h3>
-            <button onClick={() => navigate("/opd/followups")} className="text-violet-600 dark:text-violet-400 text-xs font-medium hover:underline">
+            <button onClick={() => navigate("/opd/followups")} className="text-violet-600 dark:text-violet-400 text-xs font-medium hover:underline flex-shrink-0">
               Send →
             </button>
           </div>
@@ -228,49 +261,53 @@ export default function OPDDashboard() {
           </h3>
           <button
             onClick={() => navigate("/opd/patients")}
-            className="text-teal-600 dark:text-teal-400 text-xs hover:text-teal-700 dark:hover:text-teal-300 transition-colors font-medium"
+            className="text-teal-600 dark:text-teal-400 text-xs hover:text-teal-700 dark:hover:text-teal-300 transition-colors font-medium flex-shrink-0"
           >
             View All →
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[540px]">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-900/50">
-                {["Token", "Patient", "Age", "Phone", "Fee", "Payment", "Visit Date"].map(h => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {recentPatients.map(p => (
-                <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors border-t border-slate-100 dark:border-slate-800/50">
-                  <td className="px-5 py-3.5 font-mono text-xs text-teal-600 dark:text-teal-400 font-bold">{p.serialNumber}</td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-teal-50 dark:bg-teal-500/20 flex items-center justify-center text-teal-600 dark:text-teal-400 text-xs font-bold border border-teal-100 dark:border-transparent flex-shrink-0">
-                        {p.name[0]}
-                      </div>
-                      <span className="text-slate-800 dark:text-white font-medium truncate">{p.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-slate-500 dark:text-slate-400">{p.age}y</td>
-                  <td className="px-5 py-3.5 text-slate-500 dark:text-slate-400">{p.phone}</td>
-                  <td className="px-5 py-3.5 text-emerald-600 dark:text-emerald-400 font-medium">₹{p.fee}</td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex gap-1 flex-wrap">
-                      {p.cash > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:transparent">Cash</span>}
-                      {p.upi  > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 border border-violet-200 dark:transparent">UPI</span>}
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-slate-500 dark:text-slate-400">{p.visitDate}</td>
+        {recentPatients.length === 0 ? (
+          <div className="px-5 py-10 text-center text-slate-400 dark:text-slate-500 text-sm">No patients registered yet</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[540px]">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-900/50">
+                  {["Token", "Patient", "Age", "Phone", "Fee", "Payment", "Visit Date"].map(h => (
+                    <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {recentPatients.map(p => (
+                  <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors border-t border-slate-100 dark:border-slate-800/50">
+                    <td className="px-5 py-3.5 font-mono text-xs text-teal-600 dark:text-teal-400 font-bold">{p.serialNumber}</td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-teal-50 dark:bg-teal-500/20 flex items-center justify-center text-teal-600 dark:text-teal-400 text-xs font-bold border border-teal-100 dark:border-transparent flex-shrink-0">
+                          {p.name[0]}
+                        </div>
+                        <span className="text-slate-800 dark:text-white font-medium truncate">{p.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-500 dark:text-slate-400">{p.age}y</td>
+                    <td className="px-5 py-3.5 text-slate-500 dark:text-slate-400">{p.phone}</td>
+                    <td className="px-5 py-3.5 text-emerald-600 dark:text-emerald-400 font-medium">₹{p.fee}</td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex gap-1 flex-wrap">
+                        {p.cash > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:transparent">Cash</span>}
+                        {p.upi  > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 border border-violet-200 dark:transparent">UPI</span>}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-500 dark:text-slate-400">{p.visitDate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

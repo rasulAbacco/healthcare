@@ -1,8 +1,9 @@
 // client/src/pages/opd/OPDPatientForm.jsx
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { PageHeader, FormInput, FormSelect, FormTextarea, SectionCard } from "../../components/UI";
-import { ArrowLeft, User, CreditCard, ClipboardList, Save, X, Bell } from "lucide-react";
+import { ArrowLeft, User, CreditCard, ClipboardList, Save, X, Bell, Loader2 } from "lucide-react";
+import { api } from "../../lib/api";
 
 const emptyForm = {
   name: "", age: "", gender: "", place: "", phone: "", fee: "",
@@ -13,50 +14,75 @@ const emptyForm = {
   diagnosis: "", prescription: "", doctorNotes: "",
 };
 
-function generateSerial(patients) {
-  const nums = patients
-    .map(p => p.serialNumber)
-    .filter(Boolean)
-    .map(s => parseInt(s.replace("OPD-", "")) || 0);
-  const next = nums.length ? Math.max(...nums) + 1 : 1;
-  return `OPD-${String(next).padStart(3, "0")}`;
-}
+// props kept backward-compatible: pass `editPatient` directly (skips the
+// fetch), OR navigate to a route with an :id param and it'll load itself.
+export default function OPDPatientForm({ editPatient, onDone }) {
+  const { id: routeId } = useParams();
+  const patientId = editPatient?.id || routeId || null;
 
-export default function OPDPatientForm({ patients, setPatients, editPatient, onDone }) {
   const [form, setForm] = useState(editPatient || emptyForm);
+  const [serialNumber, setSerialNumber] = useState(editPatient?.serialNumber || null);
+  const [loading, setLoading] = useState(!!patientId && !editPatient);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const serialNumber = editPatient?.serialNumber || generateSerial(patients);
+  useEffect(() => {
+    if (!patientId || editPatient) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const { patient } = await api.get(`/opd/patients/${patientId}`);
+        setForm(patient);
+        setSerialNumber(patient.serialNumber);
+      } catch (err) {
+        setError(err.message || "Could not load this patient.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId]);
 
   const set = (field) => (val) => setForm(f => ({ ...f, [field]: val }));
   const cash  = parseFloat(form.cash) || 0;
   const upi   = parseFloat(form.upi)  || 0;
   const total = cash + upi;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const entry = {
-      ...form,
-      serialNumber,
-      id: editPatient ? editPatient.id : Date.now(),
-      age: parseInt(form.age),
-      fee: parseFloat(form.fee) || 0,
-      cash, upi, total,
-      reminderEnabled: form.reminderEnabled === true || form.reminderEnabled === "true",
-      reminderStatus: form.reminderEnabled ? (form.reminderStatus || "Pending") : "Not Set",
-    };
-    editPatient
-      ? setPatients(ps => ps.map(p => p.id === editPatient.id ? entry : p))
-      : setPatients(ps => [...ps, entry]);
-    if (onDone) onDone(); else navigate("/opd/patients");
+    setSaving(true);
+    setError("");
+    try {
+      if (patientId) {
+        await api.put(`/opd/patients/${patientId}`, form);
+      } else {
+        await api.post("/opd/patients", form);
+      }
+      if (onDone) onDone(); else navigate("/opd/patients");
+    } catch (err) {
+      setError(err.message || "Could not save this patient. Please try again.");
+      setSaving(false);
+    }
   };
 
   const back = () => onDone ? onDone() : navigate("/opd/patients");
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500 text-sm font-medium">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Loading patient...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader
-        title={editPatient ? "Edit Patient" : "Register OPD Patient"}
+        title={patientId ? "Edit Patient" : "Register OPD Patient"}
         subtitle="Outpatient consultation registration"
         action={
           <button onClick={back} className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white text-sm font-medium transition-colors">
@@ -64,13 +90,19 @@ export default function OPDPatientForm({ patients, setPatients, editPatient, onD
           </button>
         }
       />
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-4xl">
+      <form onSubmit={handleSubmit} className="space-y-4 w-full max-w-4xl mx-auto">
         {/* Token Badge */}
         <div className="flex items-center gap-3 mb-2">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-teal-50 dark:bg-teal-500/15 border border-teal-200 dark:border-teal-500/25 rounded-xl text-teal-700 dark:text-teal-400 font-mono font-bold text-sm">
-            🎫 Token: {serialNumber}
+            🎫 Token: {serialNumber || "Assigned after save"}
           </div>
         </div>
+
+        {error && (
+          <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl px-4 py-3 text-rose-600 dark:text-rose-400 text-sm font-medium">
+            {error}
+          </div>
+        )}
 
         <SectionCard title="Personal Details" icon={User}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -122,7 +154,7 @@ export default function OPDPatientForm({ patients, setPatients, editPatient, onD
                 <button
                   type="button"
                   onClick={() => setForm(f => ({ ...f, reminderEnabled: !f.reminderEnabled, reminderStatus: !f.reminderEnabled ? "Pending" : "Not Set" }))}
-                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 focus:outline-none ${
+                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 focus:outline-none flex-shrink-0 ${
                     form.reminderEnabled ? "bg-teal-500" : "bg-slate-200 dark:bg-slate-700"
                   }`}
                 >
@@ -145,15 +177,17 @@ export default function OPDPatientForm({ patients, setPatients, editPatient, onD
         <div className="flex flex-col sm:flex-row gap-3">
           <button
             type="submit"
-            className="flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-cyan-400 text-white font-semibold px-6 py-2.5 rounded-xl hover:scale-[1.02] transition-transform shadow-lg shadow-teal-500/20 text-sm"
+            disabled={saving}
+            className="flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-cyan-400 text-white font-semibold px-6 py-2.5 rounded-xl hover:scale-[1.02] transition-transform shadow-lg shadow-teal-500/20 text-sm disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
-            <Save className="w-4 h-4" />
-            {editPatient ? "Update Patient" : "Register Patient"}
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? "Saving..." : patientId ? "Update Patient" : "Register Patient"}
           </button>
           <button
             type="button"
             onClick={back}
-            className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium px-6 py-2.5 rounded-xl text-sm transition-colors border border-slate-200 dark:border-slate-700"
+            disabled={saving}
+            className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium px-6 py-2.5 rounded-xl text-sm transition-colors border border-slate-200 dark:border-slate-700 disabled:opacity-60"
           >
             <X className="w-4 h-4" /> Cancel
           </button>

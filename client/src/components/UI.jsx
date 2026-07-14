@@ -53,14 +53,16 @@ export function StatusBadge({ status }) {
 }
 
 // ── Delete Confirmation Modal ──────────────────────────────
-export function DeleteModal({ onConfirm, onCancel, name }) {
+// itemLabel lets callers customize the noun in the title/message
+// ("Patient", "Medicine", "Category", etc.) instead of it always saying "Patient".
+export function DeleteModal({ onConfirm, onCancel, name, itemLabel = "Patient" }) {
   return (
     <div className="fixed inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
         <div className="w-14 h-14 rounded-2xl bg-red-50 dark:bg-red-500/10 flex items-center justify-center mx-auto mb-4">
           <Trash2 className="w-6 h-6 text-red-500 dark:text-red-400" />
         </div>
-        <h3 className="text-slate-800 dark:text-white font-bold text-lg text-center mb-2">Delete Patient</h3>
+        <h3 className="text-slate-800 dark:text-white font-bold text-lg text-center mb-2">Delete {itemLabel}</h3>
         <p className="text-slate-500 dark:text-slate-400 text-sm text-center mb-6">
           Are you sure you want to delete{" "}
           <span className="text-slate-800 dark:text-white font-semibold">{name}</span>?{" "}
