@@ -19,6 +19,7 @@ import OPDFollowUps from "./pages/opd/OPDFollowUps";
 import IPDDashboard from "./pages/ipd/IPDDashboard";
 import IPDPatientList from "./pages/ipd/IPDPatientList";
 import IPDPatientForm from "./pages/ipd/IPDPatientForm";
+import IPDPaymentList from "./pages/ipd/payments/IPDPaymentList";
 
 import { DoctorOPDDashboard } from "./pages/doctor/DoctorOPDDashboard";
 import { DoctorIPDDashboard } from "./pages/doctor/DoctorIPDDashboard";
@@ -78,6 +79,7 @@ function AppRoutes() {
         <Route path="/ipd-dashboard" element={<IPDDashboard />} />
         <Route path="/ipd/admit"     element={<IPDPatientForm patients={ipdPatients} setPatients={setIpdPatients} />} />
         <Route path="/ipd/patients"  element={<IPDPatientList patients={ipdPatients} setPatients={setIpdPatients} />} />
+        <Route path="/ipd/payments"  element={<IPDPaymentList />} />
       </Route>
 
       {/* Doctor OPD */}

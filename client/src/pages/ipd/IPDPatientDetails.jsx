@@ -1,6 +1,7 @@
 // client/src/pages/ipd/IPDPatientDetails.jsx
 import { useState, useRef } from "react";
 import { SectionCard, StatusBadge } from "../../components/UI";
+import { uploadDocument, deleteDocument } from "./api/ipd.api";
 import {
   ArrowLeft, User, BedDouble, CreditCard, BarChart3,
   FlaskConical, Paperclip, Upload, Trash2,
@@ -8,26 +9,40 @@ import {
 
 const docTypes = ["Prescription", "Lab Report", "Scan Report", "Hospital Bill"];
 
-export default function IPDPatientDetails({ patient: initP, setPatients, onBack, readOnly = false }) {
-  const [p, setP]         = useState(initP);
-  const fileRef           = useRef();
-  const [docType, setDocType] = useState("Prescription");
+// backend file urls are relative (e.g. "/uploads/ipd-documents/xyz.pdf") -> resolve against API origin
+const API_ORIGIN = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+const resolveUrl = (url) => (url?.startsWith("http") ? url : `${API_ORIGIN}${url}`);
 
-  const handleFile = (e) => {
+export default function IPDPatientDetails({ patient: initP, onBack, readOnly = false }) {
+  const [p, setP]           = useState(initP);
+  const fileRef             = useRef();
+  const [docType, setDocType] = useState("Prescription");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError]   = useState("");
+
+  const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    const doc = { id: Date.now(), name: file.name, type: docType, url, fileType: file.type };
-    const updated = { ...p, documents: [...(p.documents || []), doc] };
-    setP(updated);
-    if (setPatients) setPatients(ps => ps.map(pt => pt.id === p.id ? updated : pt));
-    e.target.value = "";
+    setUploading(true);
+    setError("");
+    try {
+      const doc = await uploadDocument(p.id, file, docType);
+      setP(prev => ({ ...prev, documents: [doc, ...(prev.documents || [])] }));
+    } catch (err) {
+      setError(err.message || "Failed to upload document");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   };
 
-  const deleteDoc = (id) => {
-    const updated = { ...p, documents: p.documents.filter(d => d.id !== id) };
-    setP(updated);
-    if (setPatients) setPatients(ps => ps.map(pt => pt.id === p.id ? updated : pt));
+  const deleteDoc = async (id) => {
+    try {
+      await deleteDocument(p.id, id);
+      setP(prev => ({ ...prev, documents: prev.documents.filter(d => d.id !== id) }));
+    } catch (err) {
+      setError(err.message || "Failed to delete document");
+    }
   };
 
   const isImage = (ft) => ft && ft.startsWith("image");
@@ -69,10 +84,10 @@ export default function IPDPatientDetails({ patient: initP, setPatients, onBack,
         <SectionCard title="Admission Information" icon={BedDouble}>
           <div className="grid grid-cols-2 gap-3 text-sm">
             {[
-              { label: "Admission Date",  val: p.admissionDate },
+              { label: "Admission Date",  val: p.admissionDate ? new Date(p.admissionDate).toLocaleDateString() : "—" },
               { label: "Admission Time",  val: p.admissionTime },
               { label: "Expected Stay",   val: p.expectedDays ? `${p.expectedDays} days` : "—" },
-              { label: "Discharge Date",  val: p.dischargeDate  || "—" },
+              { label: "Discharge Date",  val: p.dischargeDate ? new Date(p.dischargeDate).toLocaleDateString() : "—" },
               { label: "Discharge Time",  val: p.dischargeTime  || "—" },
             ].map(item => (
               <div key={item.label}>
@@ -106,8 +121,8 @@ export default function IPDPatientDetails({ patient: initP, setPatients, onBack,
 
         <SectionCard title="Stay Charges" icon={BarChart3}>
           <div className="space-y-2 mb-3">
-            {(p.stayPeriods || []).map((period, i) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800/50">
+            {(p.dailyCharges || []).map((period, i) => (
+              <div key={period.id || i} className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800/50">
                 <div className="text-slate-500 dark:text-slate-400 text-sm">
                   Period {i + 1}: {period.days} days × ₹{period.rate}/day
                 </div>
@@ -122,7 +137,25 @@ export default function IPDPatientDetails({ patient: initP, setPatients, onBack,
         </SectionCard>
       </div>
 
-      {/* Items */}
+      {/* Medicines */}
+      <div className="max-w-6xl mb-4">
+        <SectionCard title="Medicines" icon={FlaskConical}>
+          {(!p.medicines || p.medicines.length === 0) ? (
+            <p className="text-sm text-slate-400 text-center py-4">No medicines recorded.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {p.medicines.map((m, i) => (
+                <div key={m.id || i} className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-transparent rounded-xl p-3 flex justify-between items-center">
+                  <span className="text-slate-800 dark:text-white text-sm font-medium">{m.name}</span>
+                  <span className="text-slate-500 dark:text-slate-400 text-xs">{m.quantity} {m.unit}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      {/* Legacy items */}
       <div className="max-w-6xl mb-4">
         <SectionCard title="Admission Items" icon={FlaskConical}>
           <div className="grid grid-cols-3 gap-4">
@@ -144,6 +177,11 @@ export default function IPDPatientDetails({ patient: initP, setPatients, onBack,
       {/* Documents */}
       <div className="max-w-6xl">
         <SectionCard title="Documents" icon={Paperclip}>
+          {error && (
+            <div className="mb-3 text-xs text-red-500 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl px-3 py-2">
+              {error}
+            </div>
+          )}
           {!readOnly && (
             <div className="flex gap-3 mb-4 flex-wrap">
               <select
@@ -155,10 +193,11 @@ export default function IPDPatientDetails({ patient: initP, setPatients, onBack,
               </select>
               <button
                 type="button"
+                disabled={uploading}
                 onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-2 bg-violet-50 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-500/30 px-4 py-2 rounded-xl text-sm font-medium hover:bg-violet-100 dark:hover:bg-violet-500/30 transition-colors"
+                className="flex items-center gap-2 bg-violet-50 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-500/30 px-4 py-2 rounded-xl text-sm font-medium hover:bg-violet-100 dark:hover:bg-violet-500/30 transition-colors disabled:opacity-60"
               >
-                <Upload className="w-4 h-4" /> Upload Document
+                <Upload className="w-4 h-4" /> {uploading ? "Uploading..." : "Upload Document"}
               </button>
               <input ref={fileRef} type="file" className="hidden" onChange={handleFile} accept="image/*,.pdf" />
             </div>
@@ -174,11 +213,11 @@ export default function IPDPatientDetails({ patient: initP, setPatients, onBack,
               {p.documents.map(doc => (
                 <div key={doc.id} className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
                   {isImage(doc.fileType) ? (
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                      <img src={doc.url} alt={doc.name} className="w-full h-28 object-cover hover:opacity-90 transition-opacity" />
+                    <a href={resolveUrl(doc.url)} target="_blank" rel="noopener noreferrer">
+                      <img src={resolveUrl(doc.url)} alt={doc.name} className="w-full h-28 object-cover hover:opacity-90 transition-opacity" />
                     </a>
                   ) : (
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center h-28 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors gap-2">
+                    <a href={resolveUrl(doc.url)} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center h-28 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors gap-2">
                       <Paperclip className="w-8 h-8 text-slate-400 dark:text-slate-500" />
                       <span className="text-xs text-slate-400 dark:text-slate-500">View</span>
                     </a>

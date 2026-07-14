@@ -1,7 +1,7 @@
 // client/src/pages/ipd/IPDDashboard.jsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ipdPatients as initialData } from "../../data/dummyData";
+import { fetchIpdStats } from "./api/ipd.api";
 import { StatCard, PageHeader, StatusBadge } from "../../components/UI";
 import {
   BedDouble, Pill, CheckCircle2, AlertTriangle, UserPlus,
@@ -9,12 +9,32 @@ import {
 } from "lucide-react";
 
 export default function IPDDashboard() {
-  const [patients] = useState(initialData);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const admitted     = patients.filter(p => p.status === "Admitted");
-  const discharged   = patients.filter(p => p.status === "Discharged");
-  const totalBalance = admitted.reduce((s, p) => s + (p.balance || 0), 0);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchIpdStats()
+      .then((data) => { if (!cancelled) setStats(data); })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return <div className="p-6 text-sm text-slate-400">Loading dashboard…</div>;
+  }
+  if (error) {
+    return <div className="p-6 text-sm text-red-500">Failed to load dashboard: {error}</div>;
+  }
+
+  const {
+    totalAdmittedEver, activeCount, dischargedCount, totalBalance,
+    totalDeposits, totalCash, totalUpi, activePatients, recentDischarges,
+  } = stats;
 
   return (
     <div className="p-3 sm:p-6 max-w-7xl mx-auto w-full overflow-hidden">
@@ -32,15 +52,15 @@ export default function IPDDashboard() {
         }
       />
 
-      {/* Stats - FIX: Changed baseline grid-cols-2 to grid-cols-1 below sm viewports */}
+      {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
-        <StatCard label="Total Admitted"   value={patients.length}                        icon={BedDouble}     color="purple" />
-        <StatCard label="Active Patients"  value={admitted.length}                        icon={Pill}          color="blue"   sub="Currently admitted" />
-        <StatCard label="Discharged"       value={discharged.length}                      icon={CheckCircle2}  color="green"  sub="Successfully treated" />
-        <StatCard label="Pending Balance"  value={`₹${totalBalance.toLocaleString()}`}    icon={AlertTriangle} color="red"    sub="From active patients" />
+        <StatCard label="Total Admitted"   value={totalAdmittedEver}                       icon={BedDouble}     color="purple" />
+        <StatCard label="Active Patients"  value={activeCount}                             icon={Pill}          color="blue"   sub="Currently admitted" />
+        <StatCard label="Discharged"       value={dischargedCount}                         icon={CheckCircle2}  color="green"  sub="Successfully treated" />
+        <StatCard label="Pending Balance"  value={`₹${totalBalance.toLocaleString()}`}     icon={AlertTriangle} color="red"    sub="From active patients" />
       </div>
 
-      {/* Main Content Layout - Stacks on mobile, splits on lg displays */}
+      {/* Main Content Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         {/* Active patients list */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none transition-colors duration-300">
@@ -56,17 +76,17 @@ export default function IPDDashboard() {
             </button>
           </div>
           <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
-            {admitted.length === 0 ? (
+            {activePatients.length === 0 ? (
               <p className="p-5 text-xs text-slate-400 text-center">No active inpatients currently admitted.</p>
             ) : (
-              admitted.map(p => (
+              activePatients.map(p => (
                 <div key={p.id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                   <div className="w-9 h-9 rounded-full bg-violet-50 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center font-bold text-sm border border-violet-100 dark:border-transparent flex-shrink-0">
                     {p.name[0]}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-slate-800 dark:text-white text-sm font-medium truncate">{p.name}</div>
-                    <div className="text-slate-400 dark:text-slate-500 text-xs truncate">Admitted: {p.admissionDate}</div>
+                    <div className="text-slate-400 dark:text-slate-500 text-xs truncate">Admitted: {new Date(p.admissionDate).toLocaleDateString()}</div>
                   </div>
                   <div className="text-right flex-shrink-0 pl-2">
                     <div className="text-red-500 dark:text-red-400 text-xs font-semibold">₹{p.balance?.toLocaleString()}</div>
@@ -86,10 +106,10 @@ export default function IPDDashboard() {
             </h3>
             <div className="space-y-1">
               {[
-                { label: "Total Deposits", val: `₹${patients.reduce((s, p) => s + p.deposit, 0).toLocaleString()}`, color: "text-emerald-600 dark:text-emerald-400" },
-                { label: "Total Cash",      val: `₹${patients.reduce((s, p) => s + p.cash, 0).toLocaleString()}`,    color: "text-amber-600 dark:text-amber-400" },
-                { label: "Total UPI",       val: `₹${patients.reduce((s, p) => s + p.upi, 0).toLocaleString()}`,     color: "text-violet-600 dark:text-violet-400" },
-                { label: "Total Pending",   val: `₹${totalBalance.toLocaleString()}`,                                color: "text-red-500 dark:text-red-400" },
+                { label: "Total Deposits", val: `₹${totalDeposits.toLocaleString()}`, color: "text-emerald-600 dark:text-emerald-400" },
+                { label: "Total Cash",      val: `₹${totalCash.toLocaleString()}`,    color: "text-amber-600 dark:text-amber-400" },
+                { label: "Total UPI",       val: `₹${totalUpi.toLocaleString()}`,     color: "text-violet-600 dark:text-violet-400" },
+                { label: "Total Pending",   val: `₹${totalBalance.toLocaleString()}`, color: "text-red-500 dark:text-red-400" },
               ].map(item => (
                 <div key={item.label} className="flex justify-between items-center py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
                   <span className="text-slate-500 dark:text-slate-400 text-sm">{item.label}</span>
@@ -105,17 +125,17 @@ export default function IPDDashboard() {
               <CheckCircle2 className="w-4 h-4 text-slate-400 dark:text-slate-500" /> Recent Discharges
             </h3>
             <div className="space-y-1">
-              {discharged.length === 0 ? (
+              {recentDischarges.length === 0 ? (
                 <p className="py-3 text-xs text-slate-400">No recent discharges found.</p>
               ) : (
-                discharged.slice(0, 4).map(p => (
+                recentDischarges.map(p => (
                   <div key={p.id} className="flex items-center gap-3 py-2 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
                     <div className="w-7 h-7 rounded-full bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs font-bold border border-emerald-100 dark:border-transparent flex-shrink-0">
                       {p.name[0]}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-slate-800 dark:text-white text-xs font-medium truncate">{p.name}</div>
-                      <div className="text-slate-400 dark:text-slate-500 text-xs truncate">Discharged: {p.dischargeDate}</div>
+                      <div className="text-slate-400 dark:text-slate-500 text-xs truncate">Discharged: {p.dischargeDate ? new Date(p.dischargeDate).toLocaleDateString() : "—"}</div>
                     </div>
                     <div className="flex-shrink-0">
                       <StatusBadge status="Discharged" />

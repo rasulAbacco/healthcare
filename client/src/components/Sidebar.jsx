@@ -20,6 +20,7 @@ import {
   History,
   Clock,
   Plus,
+  Wallet
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -34,6 +35,7 @@ const menuConfig = {
     { label: "Dashboard",     icon: LayoutDashboard, to: "/ipd-dashboard" },
     { label: "Admit Patient", icon: BedDouble,       to: "/ipd/admit"     },
     { label: "All Patients",  icon: Users,           to: "/ipd/patients"  },
+    { label: "Payments",      icon: Wallet,          to: "/ipd/payments"  },
   ],
   "doctor-OPD": [
     { label: "OPD Patients", icon: Stethoscope,   to: "/doctor/opd"           },

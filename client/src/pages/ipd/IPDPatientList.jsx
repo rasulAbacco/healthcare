@@ -1,10 +1,11 @@
 // client/src/pages/ipd/IPDPatientList.jsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   PageHeader, SearchBar, TableCard, Th, Td, ActionBtn,
   DeleteModal, EmptyState, Pagination, StatusBadge,
 } from "../../components/UI";
+import { fetchPatients, deletePatient as apiDeletePatient } from "./api/ipd.api";
 import IPDPatientForm from "./IPDPatientForm";
 import IPDPatientDetails from "./IPDPatientDetails";
 import { UserPlus, Search, Calendar, Clock, CreditCard } from "lucide-react";
@@ -23,7 +24,16 @@ const dischargeStatusColors = {
   "Discharged":          "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20",
 };
 
-export default function IPDPatientList({ patients, setPatients, readOnly = false }) {
+// backend stores dates as ISO datetimes -> show just the date/time parts
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
+
+export default function IPDPatientList({ readOnly = false }) {
+  const [patients, setPatients]         = useState([]);
+  const [totalPages, setTotalPages]     = useState(1);
+  const [totalCount, setTotalCount]     = useState(0);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState("");
+
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage]                 = useState(1);
@@ -32,26 +42,54 @@ export default function IPDPatientList({ patients, setPatients, readOnly = false
   const [viewing, setViewing]           = useState(null);
   const navigate = useNavigate();
 
-  const filtered = patients.filter(p => {
-    const matchName   = p.name.toLowerCase().includes(search.toLowerCase())
-      || (p.serialNumber || "").toLowerCase().includes(search.toLowerCase());
-    const matchStatus = !statusFilter || p.status === statusFilter;
-    return matchName && matchStatus;
-  });
+  const load = () => {
+    setLoading(true);
+    fetchPatients({ search, status: statusFilter, page, limit: PER_PAGE })
+      .then(({ data, totalPages, total }) => {
+        setPatients(data);
+        setTotalPages(totalPages);
+        setTotalCount(total);
+        setError("");
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
 
-  const totalPages = Math.ceil(filtered.length / PER_PAGE);
-  const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  useEffect(() => {
+    const t = setTimeout(load, 250); // small debounce for search typing
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusFilter, page]);
 
-  const handleDelete = (id) => { setPatients(ps => ps.filter(p => p.id !== id)); setDeleteId(null); };
+  const handleDelete = (id) => {
+    apiDeletePatient(id)
+      .then(() => { setDeleteId(null); load(); })
+      .catch((err) => { setError(err.message); setDeleteId(null); });
+  };
 
-  if (editing) return <IPDPatientForm patients={patients} setPatients={setPatients} editPatient={editing} onDone={() => setEditing(null)} />;
-  if (viewing) return <IPDPatientDetails patient={viewing} setPatients={setPatients} onBack={() => setViewing(null)} readOnly={readOnly} />;
+  if (editing) {
+    return (
+      <IPDPatientForm
+        editPatient={editing}
+        onDone={() => { setEditing(null); load(); }}
+      />
+    );
+  }
+  if (viewing) {
+    return (
+      <IPDPatientDetails
+        patient={viewing}
+        onBack={() => { setViewing(null); load(); }}
+        readOnly={readOnly}
+      />
+    );
+  }
 
   return (
     <div className="w-full px-2 sm:px-4 max-w-7xl mx-auto">
       <PageHeader
         title="IPD Patients"
-        subtitle={`${filtered.length} records`}
+        subtitle={`${totalCount} records`}
         action={
           !readOnly && (
             <button
@@ -66,7 +104,7 @@ export default function IPDPatientList({ patients, setPatients, readOnly = false
         }
       />
 
-      {/* Responsive Filters Layout */}
+      {/* Filters */}
       <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center">
         <div className="flex-1">
           <SearchBar value={search} onChange={s => { setSearch(s); setPage(1); }} placeholder="Search by name or IPD no..." />
@@ -88,30 +126,37 @@ export default function IPDPatientList({ patients, setPatients, readOnly = false
         </div>
       </div>
 
-      {/* Fallback Empty Area Rendering */}
-      {paginated.length === 0 ? (
+      {error && (
+        <div className="mb-4 text-sm text-red-500 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl px-4 py-2.5">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 text-center text-sm text-slate-400">
+          Loading patients…
+        </div>
+      ) : patients.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8">
           <EmptyState icon={Search} message="No patients found" />
         </div>
       ) : (
         <>
-          {/* 1. DESKTOP MODE: Displayed inside large width viewports */}
+          {/* DESKTOP */}
           <div className="hidden xl:block">
             <TableCard>
               <thead>
                 <tr>
                   <Th>IPD No.</Th><Th>Patient</Th><Th>Admission</Th><Th>Time</Th>
-                  <Th>Deposit</Th><Th>Cash</Th><Th>UPI</Th><Th>Card</Th><Th>Total Paid</Th>
-                  <Th>Balance</Th><Th>Settlement</Th><Th>Discharge</Th>
+                  <Th>Total Bill</Th><Th>Paid</Th><Th>Pending</Th>
+                  <Th>Settlement</Th><Th>Discharge</Th>
                   {!readOnly && <Th>Actions</Th>}
                 </tr>
               </thead>
               <tbody>
-                {paginated.map(p => (
+                {patients.map(p => (
                   <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                    <Td>
-                      <span className="font-mono text-xs text-violet-600 dark:text-violet-400 font-bold">{p.serialNumber || "—"}</span>
-                    </Td>
+                    <Td><span className="font-mono text-xs text-violet-600 dark:text-violet-400 font-bold">{p.serialNumber || "—"}</span></Td>
                     <Td>
                       <button onClick={() => setViewing(p)} className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border flex-shrink-0 ${
@@ -124,12 +169,9 @@ export default function IPDPatientList({ patients, setPatients, readOnly = false
                         <span className="text-slate-800 dark:text-white font-medium whitespace-nowrap">{p.name}</span>
                       </button>
                     </Td>
-                    <Td><span className="text-slate-500 dark:text-slate-400">{p.admissionDate}</span></Td>
+                    <Td><span className="text-slate-500 dark:text-slate-400">{fmtDate(p.admissionDate)}</span></Td>
                     <Td><span className="text-slate-500 dark:text-slate-400">{p.admissionTime}</span></Td>
-                    <Td><span className="text-blue-600 dark:text-blue-400">₹{p.deposit?.toLocaleString()}</span></Td>
-                    <Td>{p.cash > 0 ? <span className="text-amber-600 dark:text-amber-400">₹{p.cash}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}</Td>
-                    <Td>{p.upi  > 0 ? <span className="text-violet-600 dark:text-violet-400">₹{p.upi}</span>  : <span className="text-slate-300 dark:text-slate-600">—</span>}</Td>
-                    <Td>{(p.card || 0) > 0 ? <span className="text-blue-500 dark:text-blue-400">₹{p.card}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}</Td>
+                    <Td><span className="text-slate-700 dark:text-slate-300 font-medium">₹{p.totalStay?.toLocaleString()}</span></Td>
                     <Td><span className="text-emerald-600 dark:text-emerald-400 font-medium">₹{p.totalPaid?.toLocaleString()}</span></Td>
                     <Td>
                       {p.balance > 0
@@ -161,12 +203,10 @@ export default function IPDPatientList({ patients, setPatients, readOnly = false
             </TableCard>
           </div>
 
-          {/* 2. MOBILE CARD GRID MODE: Rendered on anything less than xl desktops */}
+          {/* MOBILE */}
           <div className="block xl:hidden space-y-3.5">
-            {paginated.map(p => (
+            {patients.map(p => (
               <div key={p.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-                
-                {/* Row 1: Profile Identifiers */}
                 <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <button onClick={() => setViewing(p)} className="flex-shrink-0">
@@ -192,11 +232,10 @@ export default function IPDPatientList({ patients, setPatients, readOnly = false
                   </div>
                 </div>
 
-                {/* Row 2: Intake Scheduling */}
                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400 mb-3 bg-slate-50/50 dark:bg-slate-800/20 p-2 rounded-xl border border-slate-100 dark:border-slate-800/50">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                    <span className="truncate">Adm: {p.admissionDate}</span>
+                    <span className="truncate">Adm: {fmtDate(p.admissionDate)}</span>
                   </div>
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Clock className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
@@ -204,7 +243,6 @@ export default function IPDPatientList({ patients, setPatients, readOnly = false
                   </div>
                 </div>
 
-                {/* Row 3: Financial Breakdowns */}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">Initial Deposit:</span>
@@ -230,14 +268,12 @@ export default function IPDPatientList({ patients, setPatients, readOnly = false
                   </div>
                 </div>
 
-                {/* Row 4: Transaction Mediums & Row Actions */}
                 <div className="flex justify-between items-center">
                   <div className="flex gap-1 items-center max-w-[60%] flex-wrap">
                     {p.cash > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-transparent">Cash</span>}
                     {p.upi > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-100 dark:border-transparent">UPI</span>}
                     {p.card > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-transparent">Card</span>}
                   </div>
-                  
                   {!readOnly && (
                     <div className="flex gap-1 flex-shrink-0">
                       <ActionBtn type="view"   onClick={() => setViewing(p)} />
@@ -246,7 +282,6 @@ export default function IPDPatientList({ patients, setPatients, readOnly = false
                     </div>
                   )}
                 </div>
-
               </div>
             ))}
           </div>

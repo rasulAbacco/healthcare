@@ -18,6 +18,14 @@ enum Module {
   PHARMACY
 }
 
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+  BANK_TRANSFER
+  OTHER
+}
+
 model User {
   id       String   @id @default(cuid())
   fullName String
@@ -31,4 +39,123 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ==========================================================
+//  IPD (Inpatient Department) MODULE
+// ==========================================================
+
+// Main IPD patient record
+model IPD_Patient {
+  id           String @id @default(cuid())
+  serialNumber String @unique // e.g. IPD-001
+
+  // Personal details
+  name   String
+  age    Int
+  gender String
+  phone  String?
+  aadhar String?
+
+  // Admission details
+  admissionDate   DateTime
+  admissionTime   String
+  expectedDays    Int?
+  dischargeDate   DateTime?
+  dischargeTime   String?
+  status          String    @default("Admitted")
+  dischargeStatus String    @default("Admitted")
+  notes           String?
+
+  // Payment details
+  deposit          Float  @default(0)
+  cash             Float  @default(0)
+  upi              Float  @default(0)
+  card             Float  @default(0)
+  totalPaid        Float  @default(0)
+  totalStay        Float  @default(0)
+  balance          Float  @default(0)
+  settlementStatus String @default("Pending")
+
+  // Legacy admission items
+  oil     Int @default(0)
+  protein Int @default(0)
+  syrup   Int @default(0)
+
+  // Related IPD tables
+  dailyCharges IPD_DailyCharge[]
+  medicines    IPD_Medicine[]
+  documents    IPD_Document[]
+  payments     IPD_Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ipd_patients")
+}
+
+// Related table: day-wise stay charge entries for an IPD patient
+model IPD_DailyCharge {
+  id     String   @id @default(cuid())
+  date   DateTime
+  days   Float
+  rate   Float
+  amount Float
+
+  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+
+  createdAt DateTime @default(now())
+
+  @@map("ipd_daily_charges")
+}
+
+// Related table: medicines issued to an IPD patient
+model IPD_Medicine {
+  id       String @id @default(cuid())
+  name     String
+  quantity Float
+  unit     String
+
+  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+
+  createdAt DateTime @default(now())
+
+  @@map("ipd_medicines")
+}
+
+// Related table: individual payments made by an IPD patient over the course
+
+model IPD_Payment {
+  id              String        @id @default(cuid())
+  amount          Float
+  method          PaymentMethod
+  referenceNumber String?
+  notes           String?
+  paymentDate     DateTime      @default(now())
+
+  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ipd_payments")
+}
+
+// Related table: uploaded documents (prescriptions, reports, bills) for an IPD patient
+model IPD_Document {
+  id       String  @id @default(cuid())
+  name     String
+  type     String // Prescription | Lab Report | Scan Report | Hospital Bill
+  url      String
+  fileType String?
+
+  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+
+  createdAt DateTime @default(now())
+
+  @@map("ipd_documents")
 }
