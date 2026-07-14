@@ -158,6 +158,8 @@ model IPD_Document {
   createdAt DateTime @default(now())
 
   @@map("ipd_documents")
+}
+
 enum Gender {
   MALE
   FEMALE
@@ -250,7 +252,7 @@ model Medicine {
   supplierName  String?
   notes         String?  @db.Text
 
-  stockHistory StockHistory[]
+  stockHistory        StockHistory[]
   prescribedMedicines PrescribedMedicine[]
 
   createdAt DateTime @default(now())
@@ -276,12 +278,12 @@ model StockHistory {
 }
 
 model PrescribedMedicine {
-  id            String   @id @default(cuid())
-  opdPatientId  String
-  opdPatient    OPDPatient @relation(fields: [opdPatientId], references: [id], onDelete: Cascade)
-  medicineId    String
-  medicine      Medicine   @relation(fields: [medicineId], references: [id])
-  quantity      Int
-  dosageInstructions String? @db.Text   // e.g. "1-0-1 after food for 5 days"
-  createdAt     DateTime @default(now())
+  id                 String     @id @default(cuid())
+  opdPatientId       String
+  opdPatient         OPDPatient @relation(fields: [opdPatientId], references: [id], onDelete: Cascade)
+  medicineId         String
+  medicine           Medicine   @relation(fields: [medicineId], references: [id])
+  quantity           Int
+  dosageInstructions String?    @db.Text // e.g. "1-0-1 after food for 5 days"
+  createdAt          DateTime   @default(now())
 }
