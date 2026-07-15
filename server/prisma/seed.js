@@ -2,15 +2,20 @@
 // Run: node prisma/seed.js
 
 import "dotenv/config";
+import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import bcrypt from "bcryptjs";
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL,
 });
 
 const prisma = new PrismaClient({ adapter });
+
+function normalizePhone(rawPhone) {
+  const digits = String(rawPhone || "").replace(/\D/g, "");
+  return digits.length === 10 ? `91${digits}` : digits;
+}
 
 const SEED_USERS = [
   {
@@ -54,7 +59,10 @@ async function main() {
         phone: u.phone,
         password: hashedPassword,
         role: u.role,
-        modules: u.modules,
+        modules: {
+          set: u.modules,
+        },
+        isActive: true,
       },
       create: {
         fullName: u.fullName,
@@ -62,7 +70,10 @@ async function main() {
         phone: u.phone,
         password: hashedPassword,
         role: u.role,
-        modules: u.modules,
+        modules: {
+          set: u.modules,
+        },
+        isActive: true,
       },
     });
 
