@@ -1,6 +1,24 @@
 // client/src/pages/login/Login.jsx
-// Replace your existing Login.jsx with this file
-import { useState } from "react";
+// Replace your existing Login.jsx with this file.
+//
+// Flow: mobile number + password are submitted to /api/auth/send-otp, which
+// verifies the password server-side and only then sends the OTP. The code
+// is then submitted to /api/auth/verify-otp to finish logging in and get a
+// token. This calls send-otp/verify-otp directly instead of your old
+// email/password `login()` from AuthContext.
+// Your AuthContext needs a way to store the token + user once we already
+// have them (rather than making its own network call). If it doesn't have
+// one yet, add something like this to AuthContext.jsx:
+//
+//   function setAuth(token, user) {
+//     localStorage.setItem("token", token);
+//     setUser(user);
+//   }
+//   // ...expose setAuth from the provider's value alongside login/logout
+//
+// This file assumes `useAuth()` exposes `setAuth(token, user)`. Adjust the
+// import/usage below if your context names it differently.
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
@@ -22,37 +40,151 @@ const MODULES = [
   },
 ];
 
+const API_BASE = `${import.meta.env.VITE_API_URL || ""}/api`;
+
+// Maps the uppercase role/module coming back from the server to the routes
+// your app already uses.
+function routeFor(role, module) {
+  const r = String(role || "").toLowerCase();
+  const m = String(module || "").toUpperCase();
+  if (r === "receptionist" && m === "OPD") return "/opd-dashboard";
+  if (r === "receptionist" && m === "IPD") return "/ipd-dashboard";
+  if (r === "doctor" && m === "OPD") return "/doctor/opd";
+  if (r === "doctor" && m === "IPD") return "/doctor/ipd";
+  if (r === "pharmacy") return "/pharmacy-dashboard";
+  return "/login";
+}
+
 export default function Login() {
   const [module, setModule] = useState("OPD");
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [step, setStep] = useState("phone"); // "phone" | "otp"
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [resendIn, setResendIn] = useState(0);
+  const resendTimer = useRef(null);
+  const { setAuth } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
+  const startResendCountdown = (seconds = 60) => {
+    setResendIn(seconds);
+    clearInterval(resendTimer.current);
+    resendTimer.current = setInterval(() => {
+      setResendIn((s) => {
+        if (s <= 1) {
+          clearInterval(resendTimer.current);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const handleSendOtp = async (e) => {
     e.preventDefault();
-    if (!module) { setError("Please select an administration module first."); return; }
-    setLoading(true);
     setError("");
+    setInfo("");
 
-    // module id in MODULES is "Pharmacy" for display, but the DB/enum uses "PHARMACY"
-    const moduleForApi = module.toUpperCase();
+    if (!module) return setError("Please select an administration module first.");
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 10) return setError("Please enter a valid 10-digit mobile number.");
+    if (!password) return setError("Please enter your password.");
 
-    const result = await login(email, password, moduleForApi);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: digits, password, module: module.toUpperCase() }),
+      });
+      const data = await res.json();
 
-    if (result.success) {
-      if (result.role === "receptionist" && result.module === "OPD") navigate("/opd-dashboard");
-      else if (result.role === "receptionist" && result.module === "IPD") navigate("/ipd-dashboard");
-      else if (result.role === "doctor" && result.module === "OPD") navigate("/doctor/opd");
-      else if (result.role === "doctor" && result.module === "IPD") navigate("/doctor/ipd");
-      else if (result.role === "pharmacy") navigate("/pharmacy-dashboard");
-      else navigate("/login");
-    } else {
-      setError(result.error || "Invalid credentials. Please verify your identity and try again.");
+      if (!res.ok) {
+        setError(data.message || "Could not send OTP. Please try again.");
+      } else {
+        setStep("otp");
+        setInfo("A 6-digit code has been sent to your mobile number.");
+        startResendCountdown(60);
+      }
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const handleResendOtp = async () => {
+    if (resendIn > 0) return;
+    setError("");
+    setInfo("");
+    setLoading(true);
+    try {
+      const digits = phone.replace(/\D/g, "");
+      const res = await fetch(`${API_BASE}/auth/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: digits, password, module: module.toUpperCase() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message || "Could not resend OTP.");
+      } else {
+        setInfo("A new code has been sent.");
+        startResendCountdown(60);
+      }
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    setError("");
+    setInfo("");
+
+    if (otp.trim().length !== 6) return setError("Enter the 6-digit code sent to your phone.");
+
+    setLoading(true);
+    try {
+      const digits = phone.replace(/\D/g, "");
+      const res = await fetch(`${API_BASE}/auth/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: digits, otp: otp.trim(), module: module.toUpperCase() }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.message || "Invalid or expired code.");
+      } else {
+        try {
+          setAuth(data.token, data.user, module.toUpperCase());
+          navigate(routeFor(data.user.role, module.toUpperCase()));
+        } catch (authErr) {
+          console.error("setAuth/navigate failed after OTP verification:", authErr);
+          setError("Signed in, but couldn't start your session. Please refresh and try again.");
+        }
+      }
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const changeNumber = () => {
+    setStep("phone");
+    setOtp("");
+    setPassword("");
+    setError("");
+    setInfo("");
+    clearInterval(resendTimer.current);
+    setResendIn(0);
   };
 
   return (
@@ -80,8 +212,9 @@ export default function Login() {
                 <button
                   key={m.id}
                   type="button"
+                  disabled={step === "otp"}
                   onClick={() => { setModule(m.id); setError(""); }}
-                  className={`flex flex-col items-center justify-center py-3 px-2 rounded-xl font-semibold text-sm transition-all duration-300 ${
+                  className={`flex flex-col items-center justify-center py-3 px-2 rounded-xl font-semibold text-sm transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed ${
                     module === m.id
                       ? "bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] border border-slate-200/50 dark:border-slate-700/50 scale-[1.02]"
                       : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 border border-transparent"
@@ -97,62 +230,134 @@ export default function Login() {
             </div>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1.5">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => { setEmail(e.target.value); setError(""); }}
-                placeholder="you@hospital.com"
-                className="w-full bg-slate-50/50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400/70 dark:placeholder-slate-600 focus:outline-none focus:border-teal-500 dark:focus:border-teal-500 focus:bg-white dark:focus:bg-slate-950 focus:shadow-[0_0_0_4px_rgba(20,184,166,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(20,184,166,0.05)] transition-all duration-200 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1.5">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => { setPassword(e.target.value); setError(""); }}
-                placeholder="••••••••"
-                className="w-full bg-slate-50/50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400/70 dark:placeholder-slate-600 focus:outline-none focus:border-teal-500 dark:focus:border-teal-500 focus:bg-white dark:focus:bg-slate-950 focus:shadow-[0_0_0_4px_rgba(20,184,166,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(20,184,166,0.05)] transition-all duration-200 text-sm"
-              />
-            </div>
-
-            {error && (
-              <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl px-4 py-3 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2.5 animate-fadeIn">
-                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <span className="font-medium">{error}</span>
+          {step === "phone" ? (
+            <form onSubmit={handleSendOtp} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1.5">Mobile Number</label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={phone}
+                  onChange={e => { setPhone(e.target.value); setError(""); }}
+                  placeholder="98765 43210"
+                  maxLength={10}
+                  className="w-full bg-slate-50/50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400/70 dark:placeholder-slate-600 focus:outline-none focus:border-teal-500 dark:focus:border-teal-500 focus:bg-white dark:focus:bg-slate-950 focus:shadow-[0_0_0_4px_rgba(20,184,166,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(20,184,166,0.05)] transition-all duration-200 text-sm"
+                />
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-950 font-bold text-sm py-3.5 rounded-xl transition-all duration-200 shadow-md hover:shadow-xl active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed mt-2 flex items-center justify-center tracking-wide"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2.5">
-                  <svg className="animate-spin h-4 w-4 text-current" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                  Authenticating...
-                </span>
-              ) : (
-                <span className="flex items-center gap-1">
-                  Secure Sign In
-                  <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                </span>
-              )}
-            </button>
-          </form>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1.5">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => { setPassword(e.target.value); setError(""); }}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  className="w-full bg-slate-50/50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400/70 dark:placeholder-slate-600 focus:outline-none focus:border-teal-500 dark:focus:border-teal-500 focus:bg-white dark:focus:bg-slate-950 focus:shadow-[0_0_0_4px_rgba(20,184,166,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(20,184,166,0.05)] transition-all duration-200 text-sm"
+                />
+              </div>
+
+              {error && <ErrorBanner text={error} />}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-950 font-bold text-sm py-3.5 rounded-xl transition-all duration-200 shadow-md hover:shadow-xl active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed mt-2 flex items-center justify-center tracking-wide"
+              >
+                {loading ? <Spinner label="Sending code..." /> : (
+                  <span className="flex items-center gap-1">
+                    Send OTP
+                    <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                  </span>
+                )}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Enter OTP</label>
+                <button type="button" onClick={changeNumber} className="text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:underline">
+                  Change number
+                </button>
+              </div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={otp}
+                onChange={e => { setOtp(e.target.value.replace(/\D/g, "").slice(0, 6)); setError(""); }}
+                placeholder="••••••"
+                maxLength={6}
+                className="w-full text-center tracking-[0.5em] font-bold text-lg bg-slate-50/50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400/70 dark:placeholder-slate-600 focus:outline-none focus:border-teal-500 dark:focus:border-teal-500 focus:bg-white dark:focus:bg-slate-950 focus:shadow-[0_0_0_4px_rgba(20,184,166,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(20,184,166,0.05)] transition-all duration-200"
+              />
+
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Code sent to <span className="font-semibold text-slate-700 dark:text-slate-200">{phone}</span>.{" "}
+                {resendIn > 0 ? (
+                  <span>Resend in {resendIn}s</span>
+                ) : (
+                  <button type="button" onClick={handleResendOtp} className="font-semibold text-teal-600 dark:text-teal-400 hover:underline">
+                    Resend code
+                  </button>
+                )}
+              </p>
+
+              {info && !error && <InfoBanner text={info} />}
+              {error && <ErrorBanner text={error} />}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-950 font-bold text-sm py-3.5 rounded-xl transition-all duration-200 shadow-md hover:shadow-xl active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed mt-2 flex items-center justify-center tracking-wide"
+              >
+                {loading ? <Spinner label="Verifying..." /> : (
+                  <span className="flex items-center gap-1">
+                    Secure Sign In
+                    <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                  </span>
+                )}
+              </button>
+            </form>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Spinner({ label }) {
+  return (
+    <span className="flex items-center justify-center gap-2.5">
+      <svg className="animate-spin h-4 w-4 text-current" viewBox="0 0 24 24" fill="none">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+      </svg>
+      {label}
+    </span>
+  );
+}
+
+function ErrorBanner({ text }) {
+  return (
+    <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl px-4 py-3 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2.5 animate-fadeIn">
+      <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+      <span className="font-medium">{text}</span>
+    </div>
+  );
+}
+
+function InfoBanner({ text }) {
+  return (
+    <div className="bg-teal-50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/30 rounded-xl px-4 py-3 text-teal-700 dark:text-teal-400 text-xs flex items-center gap-2.5 animate-fadeIn">
+      <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <span className="font-medium">{text}</span>
     </div>
   );
 }

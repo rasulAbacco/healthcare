@@ -30,7 +30,7 @@ model User {
   id       String   @id @default(cuid())
   fullName String
   email    String   @unique
-  phone    String?  @unique
+  phone    String  @unique
   password String
   role     Role
   modules  Module[] @default([])
@@ -311,4 +311,20 @@ model NotificationRead {
   readAt DateTime @default(now())
 
   @@unique([userId, key])
+}
+
+model LoginOtp {
+  id         String   @id @default(cuid())
+  identifier String
+  otp        String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+model Otp {
+  id         String   @id @default(cuid())
+  identifier String
+  otp        String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
 }

@@ -68,31 +68,40 @@ export function AuthProvider({ children }) {
         };
       }
 
-      // DB enums are uppercase (DOCTOR / RECEPTIONIST / PHARMACY, OPD / IPD / PHARMACY),
-      // but Sidebar.jsx / App.jsx / ProtectedRoute.jsx were built against the old dummy
-      // data which used lowercase role + module ("doctor", "OPD", etc). Normalize here
-      // so none of that existing UI code needs to change.
+      setAuth(newToken, fetchedUser, module);
+
       const resolvedModule = module || fetchedUser.modules[0];
-      const normalizedUser = {
-        ...fetchedUser,
-        role: fetchedUser.role.toLowerCase(),
-        module: resolvedModule === "PHARMACY" ? "Pharmacy" : resolvedModule,
-        username: fetchedUser.fullName, // Sidebar.jsx reads user.username[0] for the avatar initial
-      };
-
-      localStorage.setItem("hms_token", newToken);
-      localStorage.setItem("hms_module", resolvedModule);
-      setToken(newToken);
-      setUser(normalizedUser);
-
       return {
         success: true,
-        role: normalizedUser.role,
-        module: normalizedUser.module,
+        role: fetchedUser.role.toLowerCase(),
+        module: resolvedModule === "PHARMACY" ? "Pharmacy" : resolvedModule,
       };
     } catch (err) {
       return { success: false, error: "Could not reach the server. Please try again." };
     }
+  };
+
+  // Used by flows that already have a token + user from the server (e.g. the
+  // OTP login on the Login page) and just need to persist the session —
+  // without making a second network call the way login() does.
+  //
+  // DB enums are uppercase (DOCTOR / RECEPTIONIST / PHARMACY, OPD / IPD / PHARMACY),
+  // but Sidebar.jsx / App.jsx / ProtectedRoute.jsx were built against the old dummy
+  // data which used lowercase role + module ("doctor", "OPD", etc). Normalize here
+  // so none of that existing UI code needs to change.
+  const setAuth = (newToken, fetchedUser, module) => {
+    const resolvedModule = module || fetchedUser.modules[0];
+    const normalizedUser = {
+      ...fetchedUser,
+      role: fetchedUser.role.toLowerCase(),
+      module: resolvedModule === "PHARMACY" ? "Pharmacy" : resolvedModule,
+      username: fetchedUser.fullName, // Sidebar.jsx reads user.username[0] for the avatar initial
+    };
+
+    localStorage.setItem("hms_token", newToken);
+    localStorage.setItem("hms_module", resolvedModule);
+    setToken(newToken);
+    setUser(normalizedUser);
   };
 
   const logout = () => {
@@ -103,7 +112,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, initializing }}>
+    <AuthContext.Provider value={{ user, login, logout, setAuth, initializing }}>
       {children}
     </AuthContext.Provider>
   );
