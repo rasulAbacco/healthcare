@@ -6,6 +6,223 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id                String             @id @default(cuid())
+  fullName          String
+  email             String             @unique
+  phone             String             @unique
+  password          String
+  role              Role
+  modules           Module[]           @default([])
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  notificationReads NotificationRead[]
+}
+
+model IPD_Patient {
+  id               String            @id @default(cuid())
+  serialNumber     String            @unique
+  name             String
+  age              Int
+  gender           String
+  phone            String?
+  aadhar           String?
+  admissionDate    DateTime
+  admissionTime    String
+  expectedDays     Int?
+  dischargeDate    DateTime?
+  dischargeTime    String?
+  status           String            @default("Admitted")
+  dischargeStatus  String            @default("Admitted")
+  notes            String?
+  deposit          Float             @default(0)
+  cash             Float             @default(0)
+  upi              Float             @default(0)
+  card             Float             @default(0)
+  totalPaid        Float             @default(0)
+  totalStay        Float             @default(0)
+  balance          Float             @default(0)
+  settlementStatus String            @default("Pending")
+  oil              Int               @default(0)
+  protein          Int               @default(0)
+  syrup            Int               @default(0)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  dailyCharges     IPD_DailyCharge[]
+  documents        IPD_Document[]
+  medicines        IPD_Medicine[]
+  payments         IPD_Payment[]
+
+  @@map("ipd_patients")
+}
+
+model IPD_DailyCharge {
+  id        String      @id @default(cuid())
+  date      DateTime
+  days      Float
+  rate      Float
+  amount    Float
+  patientId String
+  createdAt DateTime    @default(now())
+  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("ipd_daily_charges")
+}
+
+model IPD_Medicine {
+  id           String      @id @default(cuid())
+  name         String
+  quantity     Float
+  unit         String      @default("Tablets")
+  medicineId   String?
+  dosage       String?
+  frequency    String?
+  duration     String?
+  instructions String?
+  patientId    String
+  createdAt    DateTime    @default(now())
+  medicine     Medicine?   @relation(fields: [medicineId], references: [id])
+  patient      IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("ipd_medicines")
+}
+
+model IPD_Payment {
+  id              String        @id @default(cuid())
+  amount          Float
+  method          PaymentMethod
+  referenceNumber String?
+  notes           String?
+  paymentDate     DateTime      @default(now())
+  patientId       String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  patient         IPD_Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("ipd_payments")
+}
+
+model IPD_Document {
+  id        String      @id @default(cuid())
+  name      String
+  type      String
+  url       String
+  fileType  String?
+  patientId String
+  createdAt DateTime    @default(now())
+  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("ipd_documents")
+}
+
+model OPDPatient {
+  id                  String               @id @default(cuid())
+  tokenNumber         Int                  @unique @default(autoincrement())
+  name                String
+  age                 Int
+  gender              Gender
+  place               String?
+  phone               String?
+  fee                 Float
+  cash                Float                @default(0)
+  upi                 Float                @default(0)
+  total               Float                @default(0)
+  visitDate           DateTime             @db.Date
+  notes               String?
+  followUpDate        DateTime?            @db.Date
+  condition           PatientCondition?
+  followUpDesc        String?
+  followUpStatus      FollowUpStatus       @default(PENDING)
+  reminderEnabled     Boolean              @default(false)
+  reminderStatus      ReminderStatus       @default(NOT_SET)
+  reminderSentDate    DateTime?            @db.Date
+  diagnosis           String?
+  prescription        String?
+  doctorNotes         String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  prescribedMedicines PrescribedMedicine[]
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  createdAt DateTime   @default(now())
+  medicines Medicine[]
+}
+
+model Medicine {
+  id                  String               @id @default(cuid())
+  serialNumber        String               @unique
+  drugName            String
+  genericName         String?
+  categoryId          String
+  manufacturer        String?
+  batchNumber         String
+  purchasePrice       Float
+  sellingPrice        Float
+  quantity            Int                  @default(0)
+  reorderLevel        Int                  @default(0)
+  expiryDate          DateTime             @db.Date
+  supplierName        String?
+  notes               String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  category            Category             @relation(fields: [categoryId], references: [id])
+  prescribedMedicines PrescribedMedicine[]
+  stockHistory        StockHistory[]
+  ipdMedicines        IPD_Medicine[]
+}
+
+model StockHistory {
+  id         String      @id @default(cuid())
+  medicineId String
+  date       DateTime    @db.Date
+  action     StockAction
+  quantity   Int
+  reason     String
+  createdAt  DateTime    @default(now())
+  medicine   Medicine    @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+}
+
+model PrescribedMedicine {
+  id                 String     @id @default(cuid())
+  opdPatientId       String
+  medicineId         String
+  quantity           Int
+  dosageInstructions String?
+  createdAt          DateTime   @default(now())
+  medicine           Medicine   @relation(fields: [medicineId], references: [id])
+  opdPatient         OPDPatient @relation(fields: [opdPatientId], references: [id], onDelete: Cascade)
+}
+
+model NotificationRead {
+  id     String   @id @default(cuid())
+  userId String
+  key    String
+  readAt DateTime @default(now())
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+}
+
+model LoginOtp {
+  id         String   @id @default(cuid())
+  identifier String
+  otp        String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+model Otp {
+  id         String   @id @default(cuid())
+  identifier String
+  otp        String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
 enum Role {
   DOCTOR
   RECEPTIONIST
@@ -24,153 +241,6 @@ enum PaymentMethod {
   CARD
   BANK_TRANSFER
   OTHER
-}
-
-model User {
-  id       String   @id @default(cuid())
-  fullName String
-  email    String   @unique
-  phone    String  @unique
-  password String
-  role     Role
-  modules  Module[] @default([])
-
-  notificationReads NotificationRead[]
-
-  isActive Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// ==========================================================
-//  IPD (Inpatient Department) MODULE
-// ==========================================================
-
-// Main IPD patient record
-model IPD_Patient {
-  id           String @id @default(cuid())
-  serialNumber String @unique // e.g. IPD-001
-
-  // Personal details
-  name   String
-  age    Int
-  gender String
-  phone  String?
-  aadhar String?
-
-  // Admission details
-  admissionDate   DateTime
-  admissionTime   String
-  expectedDays    Int?
-  dischargeDate   DateTime?
-  dischargeTime   String?
-  status          String    @default("Admitted")
-  dischargeStatus String    @default("Admitted")
-  notes           String?
-
-  // Payment details
-  deposit          Float  @default(0)
-  cash             Float  @default(0)
-  upi              Float  @default(0)
-  card             Float  @default(0)
-  totalPaid        Float  @default(0)
-  totalStay        Float  @default(0)
-  balance          Float  @default(0)
-  settlementStatus String @default("Pending")
-
-  // Legacy admission items
-  oil     Int @default(0)
-  protein Int @default(0)
-  syrup   Int @default(0)
-
-  // Related IPD tables
-  dailyCharges IPD_DailyCharge[]
-  medicines    IPD_Medicine[]
-  documents    IPD_Document[]
-  payments     IPD_Payment[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("ipd_patients")
-}
-
-// Related table: day-wise stay charge entries for an IPD patient
-model IPD_DailyCharge {
-  id     String   @id @default(cuid())
-  date   DateTime
-  days   Float
-  rate   Float
-  amount Float
-
-  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  patientId String
-
-  createdAt DateTime @default(now())
-
-  @@map("ipd_daily_charges")
-}
-
-// Related table: medicines issued to an IPD patient
-model IPD_Medicine {
-  id       String @id @default(cuid())
-  name     String // snapshot of drugName at time of prescribing, kept even if the Medicine is later renamed/deleted
-  quantity Float
-  unit     String @default("Tablets")
-
-  // Link to the Pharmacy medicine catalog, used to populate the searchable
-  // dropdown and validate quantity against current stock. Optional + SetNull
-  // so deleting a medicine from Pharmacy doesn't wipe historical IPD records.
-  medicineId String?
-  medicine   Medicine? @relation(fields: [medicineId], references: [id], onDelete: SetNull)
-
-  dosage       String? // e.g. "500mg"
-  frequency    String? // e.g. "1-0-1"
-  duration     String? // e.g. "5 days"
-  instructions String? @db.Text // e.g. "after food"
-
-  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  patientId String
-
-  createdAt DateTime @default(now())
-
-  @@map("ipd_medicines")
-}
-
-// Related table: individual payments made by an IPD patient over the course
-
-model IPD_Payment {
-  id              String        @id @default(cuid())
-  amount          Float
-  method          PaymentMethod
-  referenceNumber String?
-  notes           String?
-  paymentDate     DateTime      @default(now())
-
-  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  patientId String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("ipd_payments")
-}
-
-// Related table: uploaded documents (prescriptions, reports, bills) for an IPD patient
-model IPD_Document {
-  id       String  @id @default(cuid())
-  name     String
-  type     String // Prescription | Lab Report | Scan Report | Hospital Bill
-  url      String
-  fileType String?
-
-  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  patientId String
-
-  createdAt DateTime @default(now())
-
-  @@map("ipd_documents")
 }
 
 enum Gender {
@@ -201,130 +271,8 @@ enum ReminderStatus {
   FAILED
 }
 
-model OPDPatient {
-  id          String @id @default(cuid())
-  tokenNumber Int    @unique @default(autoincrement())
-  // Display serial like "OPD-001" is built from tokenNumber in the API layer —
-  // not stored, so there's nothing to keep in sync.
-
-  name   String
-  age    Int
-  gender Gender
-  place  String?
-  phone  String?
-
-  fee   Float
-  cash  Float @default(0)
-  upi   Float @default(0)
-  total Float @default(0) // = cash + upi, computed and stored at write time
-
-  visitDate DateTime @db.Date
-  notes     String?  @db.Text
-
-  followUpDate   DateTime?         @db.Date
-  condition      PatientCondition?
-  followUpDesc   String?           @db.Text
-  followUpStatus FollowUpStatus    @default(PENDING)
-
-  reminderEnabled  Boolean        @default(false)
-  reminderStatus   ReminderStatus @default(NOT_SET)
-  reminderSentDate DateTime?      @db.Date
-
-  // Filled in later by the doctor dashboard, not the registration form
-  diagnosis    String? @db.Text
-  prescription String? @db.Text
-  doctorNotes  String? @db.Text
-
-  prescribedMedicines PrescribedMedicine[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Category {
-  id        String     @id @default(cuid())
-  name      String     @unique
-  createdAt DateTime   @default(now())
-  medicines Medicine[]
-}
-
-model Medicine {
-  id            String   @id @default(cuid())
-  serialNumber  String   @unique // manually typed by pharmacist, e.g. "MED-001"
-  drugName      String
-  genericName   String?
-  categoryId    String
-  category      Category @relation(fields: [categoryId], references: [id])
-  manufacturer  String?
-  batchNumber   String
-  purchasePrice Float
-  sellingPrice  Float
-  quantity      Int      @default(0)
-  reorderLevel  Int      @default(0)
-  expiryDate    DateTime @db.Date
-  supplierName  String?
-  notes         String?  @db.Text
-
-  stockHistory        StockHistory[]
-  prescribedMedicines PrescribedMedicine[]
-  ipdMedicines        IPD_Medicine[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
 enum StockAction {
   ADD
   REDUCE
   ADJUST
-}
-
-model StockHistory {
-  id         String      @id @default(cuid())
-  medicineId String
-  medicine   Medicine    @relation(fields: [medicineId], references: [id], onDelete: Cascade)
-  date       DateTime    @db.Date
-  action     StockAction
-  quantity   Int // positive for Add, negative for Reduce — matches current UI convention
-  reason     String
-
-  createdAt DateTime @default(now())
-}
-
-model PrescribedMedicine {
-  id                 String     @id @default(cuid())
-  opdPatientId       String
-  opdPatient         OPDPatient @relation(fields: [opdPatientId], references: [id], onDelete: Cascade)
-  medicineId         String
-  medicine           Medicine   @relation(fields: [medicineId], references: [id])
-  quantity           Int
-  dosageInstructions String?    @db.Text // e.g. "1-0-1 after food for 5 days"
-  createdAt          DateTime   @default(now())
-}
-
-
-model NotificationRead {
-  id     String   @id @default(cuid())
-  userId String
-  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  key    String   // e.g. "medicineId:low-stock" — matches the frontend's notification key
-  readAt DateTime @default(now())
-
-  @@unique([userId, key])
-}
-
-model LoginOtp {
-  id         String   @id @default(cuid())
-  identifier String
-  otp        String
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-}
-
-model Otp {
-  id         String   @id @default(cuid())
-  identifier String
-  otp        String
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
 }
