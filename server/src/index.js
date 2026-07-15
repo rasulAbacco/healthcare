@@ -4,6 +4,7 @@ import authRoutes from "./auth/auth.routes.js";
 import opdRoutes from "./opd/opd.routes.js";
 import categoryRoutes from "./pharmacy/category.routes.js";
 import medicineRoutes from "./pharmacy/medicine.routes.js";
+import notificationsRoutes from "./notifications/notifications.routes.js";
 
 const app = express();
 
@@ -28,5 +29,8 @@ app.use("/api/opd/patients", opdRoutes);
 // Pharmacy routes
 app.use("/api/pharmacy/categories", categoryRoutes);
 app.use("/api/pharmacy/medicines", medicineRoutes);
+
+// Notifications (read/dismiss tracking, per-user)
+app.use("/api/notifications", notificationsRoutes);
 
 export default app;

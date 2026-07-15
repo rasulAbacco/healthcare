@@ -35,6 +35,8 @@ model User {
   role     Role
   modules  Module[] @default([])
 
+  notificationReads NotificationRead[]
+
   isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
@@ -286,4 +288,15 @@ model PrescribedMedicine {
   quantity           Int
   dosageInstructions String?    @db.Text // e.g. "1-0-1 after food for 5 days"
   createdAt          DateTime   @default(now())
+}
+
+
+model NotificationRead {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key    String   // e.g. "medicineId:low-stock" — matches the frontend's notification key
+  readAt DateTime @default(now())
+
+  @@unique([userId, key])
 }

@@ -1,6 +1,7 @@
 // server/src/pharmacy/medicine.controller.js
 import prisma from "../lib/prisma.js";
 import { fromDbMedicine, toDbStockAction } from "./pharmacy.mappers.js";
+import { clearStockReadMarks, clearExpiryReadMarks } from "../notifications/notifications.service.js";
 
 const MEDICINE_INCLUDE = { category: true, stockHistory: true };
 
@@ -148,6 +149,12 @@ export async function updateMedicine(req, res) {
       include: MEDICINE_INCLUDE,
     });
 
+    // Expiry date changed — any previously-dismissed expiry alerts for this
+    // medicine may no longer reflect reality, so let them show fresh again.
+    if (expiryDate !== undefined) {
+      await clearExpiryReadMarks(req.params.id);
+    }
+
     return res.status(200).json({ medicine: fromDbMedicine(medicine) });
   } catch (err) {
     console.error("Update medicine error:", err);
@@ -227,6 +234,15 @@ export async function addStockEntry(req, res) {
         include: MEDICINE_INCLUDE,
       });
     });
+
+    // If this restock resolved the low/out-of-stock condition, clear any
+    // previously-dismissed alerts for it — otherwise, once dismissed, the
+    // alert would stay silenced forever even if the medicine runs low again
+    // after this restock. Only clearing when actually resolved means normal
+    // "still low, dismissed once" behavior is untouched.
+    if (newQuantity > 0 && newQuantity > updated.reorderLevel) {
+      await clearStockReadMarks(req.params.id);
+    }
 
     return res.status(200).json({ medicine: fromDbMedicine(updated) });
   } catch (err) {

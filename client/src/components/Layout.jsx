@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import NotificationBell from "./NotificationBell";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { Sun, Moon, Stethoscope, UserRound, Pill } from "lucide-react";
@@ -56,7 +57,7 @@ export default function Layout() {
             </div>
           </div>
 
-          {/* Right: date, role badge, theme toggle */}
+          {/* Right: date, notifications, role badge, theme toggle */}
           <div className="flex items-center gap-3">
             <span className="text-slate-400 dark:text-slate-500 text-sm hidden md:block">
               {new Date().toLocaleDateString("en-IN", {
@@ -66,6 +67,8 @@ export default function Layout() {
                 year: "numeric",
               })}
             </span>
+
+            <NotificationBell />
 
             {user && (() => {
               const style = ROLE_STYLES[user.role] || ROLE_STYLES.receptionist;

@@ -23,7 +23,7 @@ const MODULES = [
 ];
 
 export default function Login() {
-  const [module, setModule] = useState("");
+  const [module, setModule] = useState("OPD");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
