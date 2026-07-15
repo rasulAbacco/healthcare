@@ -4,24 +4,14 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
 
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-});
-
-const prisma = new PrismaClient({ adapter });
-
-function normalizePhone(rawPhone) {
-  const digits = String(rawPhone || "").replace(/\D/g, "");
-  return digits.length === 10 ? `91${digits}` : digits;
-}
+const prisma = new PrismaClient();
 
 const SEED_USERS = [
   {
     fullName: "Dr. Ashwin Menon",
     email: "doctor@gmail.com",
-    phone: "9876543210",
+    phone: "919876543210",
     password: "123456",
     role: "DOCTOR",
     modules: ["OPD", "IPD"],
@@ -29,7 +19,7 @@ const SEED_USERS = [
   {
     fullName: "Reception Desk",
     email: "reciption@gmail.com",
-    phone: "9876543211",
+    phone: "919876543211",
     password: "123456",
     role: "RECEPTIONIST",
     modules: ["OPD", "IPD"],
@@ -37,7 +27,7 @@ const SEED_USERS = [
   {
     fullName: "Pharmacy Desk",
     email: "pharmacy@gmail.com",
-    phone: "9876543212",
+    phone: "919876543212",
     password: "123456",
     role: "PHARMACY",
     modules: ["PHARMACY"],
@@ -59,9 +49,7 @@ async function main() {
         phone: u.phone,
         password: hashedPassword,
         role: u.role,
-        modules: {
-          set: u.modules,
-        },
+        modules: u.modules,
         isActive: true,
       },
       create: {
@@ -70,15 +58,13 @@ async function main() {
         phone: u.phone,
         password: hashedPassword,
         role: u.role,
-        modules: {
-          set: u.modules,
-        },
+        modules: u.modules,
         isActive: true,
       },
     });
 
     console.log(
-      `✅ ${user.role} created/updated -> ${user.email} | Phone: ${user.phone}`
+      `✅ ${user.role} created/updated -> ${user.email} | ${user.phone}`
     );
   }
 
@@ -87,7 +73,8 @@ async function main() {
 
 main()
   .catch((err) => {
-    console.error("❌ Seed failed:", err);
+    console.error("❌ Seed failed");
+    console.error(err);
     process.exit(1);
   })
   .finally(async () => {
