@@ -83,11 +83,38 @@ function buildPatientData(body) {
     medicines: medicines
       .filter((m) => m.name && m.name.trim())
       .map((m) => ({
+        medicineId: m.medicineId || null,
         name: m.name.trim(),
         quantity: toNum(m.quantity),
         unit: m.unit || "Tablets",
+        dosage: m.dosage || null,
+        frequency: m.frequency || null,
+        duration: m.duration || null,
+        instructions: m.instructions || null,
       })),
   };
+}
+
+// Defense-in-depth: re-checks prescribed quantities against current DB stock.
+// The form already blocks over-prescribing client-side, but stock can change
+// between page load and save (e.g. another user reducing it), so this stops
+// a stale form from pushing a patient's medicine count above what's in stock.
+async function validateMedicinesStock(medicines) {
+  const withMedicineId = medicines.filter((m) => m.medicineId);
+  if (!withMedicineId.length) return null;
+
+  const ids = [...new Set(withMedicineId.map((m) => m.medicineId))];
+  const rows = await prisma.medicine.findMany({ where: { id: { in: ids } } });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  for (const m of withMedicineId) {
+    const row = byId.get(m.medicineId);
+    if (!row) return `Selected medicine "${m.name}" no longer exists in the pharmacy catalog.`;
+    if (m.quantity > row.quantity) {
+      return `Only ${row.quantity} unit(s) of "${row.drugName}" are in stock (requested ${m.quantity}).`;
+    }
+  }
+  return null;
 }
 
 const patientInclude = {
@@ -201,6 +228,10 @@ export async function getStats(req, res) {
 export async function createPatient(req, res) {
   try {
     const { flat, dailyCharges, medicines } = buildPatientData(req.body);
+
+    const stockError = await validateMedicinesStock(medicines);
+    if (stockError) return res.status(400).json({ message: stockError });
+
     const serialNumber = await generateSerialNumber();
 
     const patient = await prisma.iPD_Patient.create({
@@ -228,6 +259,9 @@ export async function updatePatient(req, res) {
     if (!existing) return res.status(404).json({ message: "Patient not found" });
 
     const { flat, dailyCharges, medicines } = buildPatientData(req.body);
+
+    const stockError = await validateMedicinesStock(medicines);
+    if (stockError) return res.status(400).json({ message: stockError });
 
     // Replace nested dailyCharges / medicines wholesale (simplest consistent approach)
     const patient = await prisma.$transaction(async (tx) => {

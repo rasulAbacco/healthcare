@@ -63,3 +63,4 @@ export function uploadDocument(patientId, file, type) {
 export function deleteDocument(patientId, docId) {
   return fetch(`${IPD_URL}/${patientId}/documents/${docId}`, { method: "DELETE" }).then(handle);
 }
+

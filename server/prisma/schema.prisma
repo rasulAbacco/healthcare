@@ -113,9 +113,20 @@ model IPD_DailyCharge {
 // Related table: medicines issued to an IPD patient
 model IPD_Medicine {
   id       String @id @default(cuid())
-  name     String
+  name     String // snapshot of drugName at time of prescribing, kept even if the Medicine is later renamed/deleted
   quantity Float
-  unit     String
+  unit     String @default("Tablets")
+
+  // Link to the Pharmacy medicine catalog, used to populate the searchable
+  // dropdown and validate quantity against current stock. Optional + SetNull
+  // so deleting a medicine from Pharmacy doesn't wipe historical IPD records.
+  medicineId String?
+  medicine   Medicine? @relation(fields: [medicineId], references: [id], onDelete: SetNull)
+
+  dosage       String? // e.g. "500mg"
+  frequency    String? // e.g. "1-0-1"
+  duration     String? // e.g. "5 days"
+  instructions String? @db.Text // e.g. "after food"
 
   patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
   patientId String
@@ -254,6 +265,7 @@ model Medicine {
 
   stockHistory        StockHistory[]
   prescribedMedicines PrescribedMedicine[]
+  ipdMedicines        IPD_Medicine[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1,14 +1,16 @@
 // client/src/pages/ipd/IPDPatientForm.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader, FormInput, FormSelect, FormTextarea, SectionCard } from "../../components/UI";
 import { createPatient, updatePatient, uploadDocument, deleteDocument } from "./api/ipd.api";
+import { api } from "../../lib/api";
+
 import {
   ArrowLeft, User, BedDouble, CreditCard, BarChart3, FlaskConical,
   FileText, Save, X, Plus, Minus, Pill, Upload, Paperclip, Trash2,
+  AlertTriangle,
 } from "lucide-react";
 
-const UNITS = ["Tablets", "Capsules", "Boxes", "Bottles", "Strips", "Injections", "Sachets", "ml", "Other"];
 const DOC_TYPES = ["Prescription", "Lab Report", "Scan Report", "Hospital Bill"];
 
 const defaultForm = {
@@ -17,7 +19,7 @@ const defaultForm = {
   admissionTime: new Date().toTimeString().slice(0, 5),
   deposit: "", cash: "", upi: "", card: "",
   dailyCharges: [{ id: Date.now(), date: new Date().toISOString().split("T")[0], days: "", rate: "", amount: 0 }],
-  medicines: [{ id: Date.now(), name: "", quantity: "", unit: "Tablets" }],
+  medicines: [],
   oil: "0", protein: "0", syrup: "0",
   expectedDays: "", dischargeDate: "", dischargeTime: "",
   notes: "", dischargeStatus: "Admitted",
@@ -38,6 +40,33 @@ export default function IPDPatientForm({ editPatient, onDone }) {
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState("");
   const navigate = useNavigate();
+
+  // --- pharmacy medicine catalog (for the dropdown) ---
+  const [medicinesList, setMedicinesList] = useState([]);
+  const [medicinesLoading, setMedicinesLoading] = useState(true);
+
+  // Medicines — staged as a simple "pick one, add it to the list" flow,
+  // same UX as OPDPatientForm's Prescribed Medicines section. Unlike OPD,
+  // IPD doesn't persist each item immediately (there's no per-item API) —
+  // the whole medicines list is sent together when the patient form is saved.
+  const [selectedMedicineId, setSelectedMedicineId] = useState("");
+  const [rxQuantity, setRxQuantity] = useState("");
+  const [rxDescription, setRxDescription] = useState("");
+  const [rxError, setRxError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      setMedicinesLoading(true);
+      try {
+        const { medicines } = await api.get("/pharmacy/medicines");
+        setMedicinesList(medicines);
+      } catch (err) {
+        setRxError(err.message || "Could not load medicine list.");
+      } finally {
+        setMedicinesLoading(false);
+      }
+    })();
+  }, []);
 
   // --- documents ---
   // existingDocs: docs already saved on the patient (only present when editing)
@@ -73,14 +102,37 @@ export default function IPDPatientForm({ editPatient, onDone }) {
   const totalStay = form.dailyCharges.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const balance   = Math.max(0, totalStay - totalPaid);
 
-  // Medicines
-  const updateMedicine = (i, field, val) => {
-    const meds = [...form.medicines];
-    meds[i] = { ...meds[i], [field]: val };
-    setForm(f => ({ ...f, medicines: meds }));
+  // Medicines — staged as a simple "pick one, add it to the list" flow.
+  const selectedMedicine = medicinesList.find(m => m.id === selectedMedicineId);
+
+  const handleAddMedicine = () => {
+    setRxError("");
+    if (!selectedMedicineId) { setRxError("Select a medicine."); return; }
+    const qty = parseInt(rxQuantity, 10);
+    if (!qty || qty <= 0) { setRxError("Enter a valid quantity."); return; }
+    if (selectedMedicine && qty > selectedMedicine.quantity) {
+      setRxError(`Only ${selectedMedicine.quantity} unit(s) of ${selectedMedicine.drugName} left, but ${qty} were requested.`);
+      return;
+    }
+
+    setForm(f => ({
+      ...f,
+      medicines: [
+        ...f.medicines,
+        {
+          id: `temp-${Date.now()}`,
+          medicineId: selectedMedicineId,
+          name: selectedMedicine?.drugName || "Medicine",
+          quantity: qty,
+          unit: "Tablets",
+          instructions: rxDescription.trim(),
+        },
+      ],
+    }));
+    setSelectedMedicineId(""); setRxQuantity(""); setRxDescription("");
   };
-  const addMedicine    = () => setForm(f => ({ ...f, medicines: [...f.medicines, { id: Date.now(), name: "", quantity: "", unit: "Tablets" }] }));
-  const removeMedicine = (i) => setForm(f => ({ ...f, medicines: f.medicines.filter((_, idx) => idx !== i) }));
+
+  const removeMedicine = (id) => setForm(f => ({ ...f, medicines: f.medicines.filter(m => m.id !== id) }));
 
   // Documents
   const handleFilePick = (e) => {
@@ -110,6 +162,17 @@ export default function IPDPatientForm({ editPatient, onDone }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    // Validate prescribed quantities against currently-known stock before saving.
+    for (const m of form.medicines) {
+      const available = medicinesList.find(mm => mm.id === m.medicineId)?.quantity;
+      const qty = parseFloat(m.quantity) || 0;
+      if (available !== undefined && qty > available) {
+        setError(`"${m.name}" — only ${available} unit(s) in stock, but ${qty} were entered.`);
+        return;
+      }
+    }
+
     setSaving(true);
 
     const payload = {
@@ -120,8 +183,12 @@ export default function IPDPatientForm({ editPatient, onDone }) {
       dailyCharges: form.dailyCharges.map(c => ({
         date: c.date, days: parseFloat(c.days) || 0, rate: parseFloat(c.rate) || 0, amount: parseFloat(c.amount) || 0,
       })),
-      medicines: form.medicines.filter(m => m.name.trim()).map(m => ({
-        ...m, quantity: parseFloat(m.quantity) || 0,
+      medicines: form.medicines.map(m => ({
+        medicineId: m.medicineId || null,
+        name: m.name,
+        quantity: parseFloat(m.quantity) || 0,
+        unit: m.unit || "Tablets",
+        instructions: m.instructions || "",
       })),
       oil:     parseInt(form.oil)     || 0,
       protein: parseInt(form.protein) || 0,
@@ -198,39 +265,96 @@ export default function IPDPatientForm({ editPatient, onDone }) {
           </div>
         </SectionCard>
 
-        <SectionCard title="Medicines" icon={Pill}>
-          <div className="space-y-3 mb-4">
-            {form.medicines.map((med, i) => (
-              <div key={med.id || i} className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end p-3 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-transparent">
-                <div className="sm:col-span-2">
-                  <FormInput label={`Medicine ${i + 1}`} value={med.name} onChange={v => updateMedicine(i, "name", v)} placeholder="Medicine name" />
-                </div>
-                <FormInput label="Quantity" type="number" value={med.quantity} onChange={v => updateMedicine(i, "quantity", v)} placeholder="0" />
+        <SectionCard title="Prescribed Medicines" icon={Pill}>
+          <div className="space-y-4">
+            {rxError && (
+              <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl px-3 py-2.5 text-rose-600 dark:text-rose-400 text-xs font-medium flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span>{rxError}</span>
+              </div>
+            )}
+
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">Unit</label>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Medicine</label>
                   <select
-                    value={med.unit}
-                    onChange={e => updateMedicine(i, "unit", e.target.value)}
-                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-800 dark:text-white text-sm focus:outline-none focus:border-teal-500 transition-colors"
+                    value={selectedMedicineId}
+                    onChange={e => { setSelectedMedicineId(e.target.value); setRxError(""); }}
+                    disabled={medicinesLoading}
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-white text-sm focus:outline-none focus:border-teal-500 transition-colors disabled:opacity-60"
                   >
-                    {UNITS.map(u => <option key={u}>{u}</option>)}
+                    <option value="">{medicinesLoading ? "Loading..." : "Select..."}</option>
+                    {medicinesList.map(m => (
+                      <option key={m.id} value={m.id} disabled={m.quantity <= 0}>
+                        {m.drugName} ({m.quantity <= 0 ? "Out of stock" : `${m.quantity} in stock`})
+                      </option>
+                    ))}
                   </select>
                 </div>
-                {form.medicines.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeMedicine(i)}
-                    className="flex items-center gap-1.5 text-red-500 dark:text-red-400 hover:text-red-600 text-sm pb-2.5 transition-colors col-span-2 sm:col-span-1"
-                  >
-                    <Minus className="w-4 h-4" /> Remove
-                  </button>
-                )}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Quantity</label>
+                  <input
+                    type="number"
+                    value={rxQuantity}
+                    onChange={e => { setRxQuantity(e.target.value); setRxError(""); }}
+                    placeholder="e.g. 10"
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-teal-500 transition-colors"
+                  />
+                  {selectedMedicine && (
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">{selectedMedicine.quantity} available</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Description (optional)</label>
+                  <input
+                    type="text"
+                    value={rxDescription}
+                    onChange={e => setRxDescription(e.target.value)}
+                    placeholder="e.g. 1-0-1 after food for 5 days"
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-teal-500 transition-colors"
+                  />
+                </div>
               </div>
-            ))}
+              <button
+                type="button"
+                onClick={handleAddMedicine}
+                className="flex items-center gap-2 bg-gradient-to-r from-teal-500 to-cyan-400 text-white font-semibold px-4 py-2 rounded-xl hover:scale-[1.02] transition-transform shadow-lg shadow-teal-500/20 text-sm"
+              >
+                <Plus className="w-4 h-4" /> Add Tablet
+              </button>
+            </div>
+
+            {form.medicines.length === 0 ? (
+              <p className="text-slate-400 dark:text-slate-500 text-sm text-center py-2">No tablets added yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {form.medicines.map(item => (
+                  <div key={item.id} className="flex items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="text-slate-800 dark:text-white font-medium text-sm truncate">
+                        {item.name} × {item.quantity}
+                      </div>
+                      {item.instructions && (
+                        <div className="text-slate-400 dark:text-slate-500 text-xs truncate">{item.instructions}</div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeMedicine(item.id)}
+                      className="flex-shrink-0 p-2 rounded-lg text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 border border-red-100 dark:border-red-500/10 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
+              <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+              Stock reduces once you submit this form and the patient is registered.
+            </p>
           </div>
-          <button type="button" onClick={addMedicine} className="flex items-center gap-1.5 text-violet-600 dark:text-violet-400 hover:text-violet-700 text-sm font-medium transition-colors">
-            <Plus className="w-4 h-4" /> Add Medicine
-          </button>
         </SectionCard>
 
         <SectionCard title="Legacy Items (Optional)" icon={FlaskConical}>
