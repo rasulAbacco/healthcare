@@ -83,7 +83,7 @@ model IPD_Medicine {
   instructions String?
   patientId    String
   createdAt    DateTime    @default(now())
-  medicine     Medicine?   @relation(fields: [medicineId], references: [id])
+  medicine     medicine?   @relation(fields: [medicineId], references: [id])
   patient      IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@map("ipd_medicines")
@@ -150,7 +150,7 @@ model Category {
   id        String     @id @default(cuid())
   name      String     @unique
   createdAt DateTime   @default(now())
-  medicines Medicine[]
+  medicines medicine[]
 }
 
 model medicine {
@@ -185,7 +185,7 @@ model StockHistory {
   quantity   Int
   reason     String
   createdAt  DateTime    @default(now())
-  medicine   Medicine    @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  medicine   medicine    @relation(fields: [medicineId], references: [id], onDelete: Cascade)
 }
 
 model PrescribedMedicine {
@@ -195,7 +195,7 @@ model PrescribedMedicine {
   quantity           Int
   dosageInstructions String?
   createdAt          DateTime   @default(now())
-  medicine           Medicine   @relation(fields: [medicineId], references: [id])
+  medicine           medicine   @relation(fields: [medicineId], references: [id])
   opdPatient         OPDPatient @relation(fields: [opdPatientId], references: [id], onDelete: Cascade)
 }
 
