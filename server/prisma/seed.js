@@ -1,4 +1,6 @@
 // server/prisma/seed.js
+// Run: node prisma/seed.js
+
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
@@ -19,7 +21,7 @@ const SEED_USERS = [
   {
     fullName: "Dr. Ashwin Menon",
     email: "doctor@gmail.com",
-    phone: "7204986825",
+    phone: "9876543210",
     password: "123456",
     role: "DOCTOR",
     modules: ["OPD", "IPD"],
@@ -27,7 +29,7 @@ const SEED_USERS = [
   {
     fullName: "Reception Desk",
     email: "reciption@gmail.com",
-    phone: "8131135185",
+    phone: "9876543211",
     password: "123456",
     role: "RECEPTIONIST",
     modules: ["OPD", "IPD"],
@@ -35,7 +37,7 @@ const SEED_USERS = [
   {
     fullName: "Pharmacy Desk",
     email: "pharmacy@gmail.com",
-    phone: "9999999999",
+    phone: "9876543212",
     password: "123456",
     role: "PHARMACY",
     modules: ["PHARMACY"],
@@ -43,19 +45,10 @@ const SEED_USERS = [
 ];
 
 async function main() {
-  console.log("🚀 Connecting to database...");
-
-  await prisma.$connect();
-
-  const now = await prisma.$queryRaw`SELECT NOW()`;
-  console.log("✅ Database Connected:", now);
-
-  const count = await prisma.user.count();
-  console.log(`👤 Existing Users: ${count}`);
+  console.log("🌱 Seeding users...\n");
 
   for (const u of SEED_USERS) {
     const hashedPassword = await bcrypt.hash(u.password, 10);
-    const phone = normalizePhone(u.phone);
 
     const user = await prisma.user.upsert({
       where: {
@@ -63,7 +56,7 @@ async function main() {
       },
       update: {
         fullName: u.fullName,
-        phone,
+        phone: u.phone,
         password: hashedPassword,
         role: u.role,
         modules: {
@@ -74,7 +67,7 @@ async function main() {
       create: {
         fullName: u.fullName,
         email: u.email,
-        phone,
+        phone: u.phone,
         password: hashedPassword,
         role: u.role,
         modules: {
@@ -85,25 +78,16 @@ async function main() {
     });
 
     console.log(
-      `✅ ${user.role} -> ${user.email} (${user.phone}) seeded successfully`
+      `✅ ${user.role} created/updated -> ${user.email} | Phone: ${user.phone}`
     );
   }
 
-  console.log("🎉 Database seeding completed.");
+  console.log("\n🎉 Seed completed successfully.");
 }
 
 main()
   .catch((err) => {
-    console.error("\n❌ Seed failed\n");
-    console.error("Name:", err.name);
-    console.error("Code:", err.code);
-    console.error("Message:", err.message);
-
-    if (err.meta) {
-      console.error("Meta:", err.meta);
-    }
-
-    console.error(err);
+    console.error("❌ Seed failed:", err);
     process.exit(1);
   })
   .finally(async () => {

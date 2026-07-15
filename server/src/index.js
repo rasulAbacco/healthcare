@@ -5,6 +5,8 @@ import opdRoutes from "./opd/opd.routes.js";
 import categoryRoutes from "./pharmacy/category.routes.js";
 import medicineRoutes from "./pharmacy/medicine.routes.js";
 import notificationsRoutes from "./notifications/notifications.routes.js";
+import ipdRoutes from "./IPD/ipd.routes.js";
+import ipdPaymentRoutes from "./IPD/ipdPayment.routes.js";
 
 const app = express();
 
@@ -25,6 +27,10 @@ app.use("/api/auth", authRoutes);
 
 // OPD routes
 app.use("/api/opd/patients", opdRoutes);
+// IPD routes
+app.use("/api/ipd", ipdRoutes);
+app.use("/api/ipd-payments", ipdPaymentRoutes);
+
 
 // Pharmacy routes
 app.use("/api/pharmacy/categories", categoryRoutes);
