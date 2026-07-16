@@ -37,6 +37,16 @@ model IPD_Patient {
   status           String            @default("Admitted")
   dischargeStatus  String            @default("Admitted")
   notes            String?
+
+  // --- Follow-up & reminder tracking (mirrors OPD's follow-up flow) ---
+  followUpDate     DateTime?         @db.Date
+  condition        String?
+  followUpDesc     String?
+  followUpStatus   String            @default("Pending")
+  reminderEnabled  Boolean           @default(false)
+  reminderStatus   String            @default("Not Set")
+  reminderSentDate DateTime?         @db.Date
+
   deposit          Float             @default(0)
   cash             Float             @default(0)
   upi              Float             @default(0)

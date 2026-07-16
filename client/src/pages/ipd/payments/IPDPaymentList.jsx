@@ -1,6 +1,6 @@
 // client/src/pages/ipd/IPDPaymentList.jsx
 import { useEffect, useState, useCallback } from "react";
-import { PageHeader } from "../../../components/UI";
+import { PageHeader, Pagination } from "../../../components/UI";
 import { fetchPaymentSummary } from "./api/ipdPayment.api";
 import IPDPaymentModal from "./IPDPaymentModal";
 import { Search, IndianRupee, Wallet } from "lucide-react";
@@ -16,12 +16,24 @@ const STATUS_STYLES = {
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "-");
 const fmtMoney = (n) => `₹${(n || 0).toLocaleString("en-IN")}`;
 
+// Order in which settlement statuses should appear: Pending -> Partially Paid -> Fully Paid
+const STATUS_ORDER = { "Pending": 0, "Partially Paid": 1, "Fully Paid": 2 };
+const sortByStatus = (list) =>
+  [...list].sort((a, b) => {
+    const oa = STATUS_ORDER[a.settlementStatus] ?? 99;
+    const ob = STATUS_ORDER[b.settlementStatus] ?? 99;
+    return oa - ob;
+  });
+
+const PER_PAGE = 12;
+
 export default function IPDPaymentList() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
   const [activePatientId, setActivePatientId] = useState(null);
 
   const load = useCallback(async () => {
@@ -29,7 +41,7 @@ export default function IPDPaymentList() {
     setError("");
     try {
       const data = await fetchPaymentSummary({ search, status });
-      setRows(data);
+      setRows(sortByStatus(data));
     } catch (err) {
       setError(err.message || "Failed to load payment summary");
     } finally {
@@ -41,6 +53,14 @@ export default function IPDPaymentList() {
     const t = setTimeout(load, 300); // light debounce on search typing
     return () => clearTimeout(t);
   }, [load]);
+
+  // Reset to first page whenever the filtered/sorted data set changes
+  useEffect(() => {
+    setPage(1);
+  }, [search, status]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const pagedRows = rows.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   const handleModalClosed = (didChange) => {
     setActivePatientId(null);
@@ -99,7 +119,7 @@ export default function IPDPaymentList() {
               ) : rows.length === 0 ? (
                 <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">No patients found.</td></tr>
               ) : (
-                rows.map((p) => (
+                pagedRows.map((p) => (
                   <tr key={p.id} className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="px-4 py-3 font-mono font-semibold text-violet-600 dark:text-violet-400">{p.serialNumber}</td>
                     <td className="px-4 py-3 text-slate-800 dark:text-white font-medium">{p.name}</td>
@@ -136,6 +156,12 @@ export default function IPDPaymentList() {
           </table>
         </div>
       </div>
+
+      {!loading && rows.length > 0 && (
+        <div className="mt-4">
+          <Pagination current={page} total={totalPages} onPageChange={setPage} />
+        </div>
+      )}
 
       {activePatientId && (
         <IPDPaymentModal patientId={activePatientId} onClose={handleModalClosed} />

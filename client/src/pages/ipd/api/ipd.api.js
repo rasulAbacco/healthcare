@@ -26,6 +26,11 @@ export function fetchIpdStats() {
   return fetch(`${IPD_URL}/stats`).then(handle);
 }
 
+// Anyone with a follow-up date set, soonest first (mirrors OPD's followups endpoint)
+export function fetchFollowUps() {
+  return fetch(`${IPD_URL}/followups`).then(handle); // -> { patients }
+}
+
 // --- writes ---
 
 export function createPatient(payload) {
@@ -63,4 +68,3 @@ export function uploadDocument(patientId, file, type) {
 export function deleteDocument(patientId, docId) {
   return fetch(`${IPD_URL}/${patientId}/documents/${docId}`, { method: "DELETE" }).then(handle);
 }
-

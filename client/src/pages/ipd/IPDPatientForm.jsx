@@ -8,7 +8,7 @@ import { api } from "../../lib/api";
 import {
   ArrowLeft, User, BedDouble, CreditCard, BarChart3, FlaskConical,
   FileText, Save, X, Plus, Minus, Pill, Upload, Paperclip, Trash2,
-  AlertTriangle,
+  AlertTriangle, Bell,
 } from "lucide-react";
 
 const DOC_TYPES = ["Prescription", "Lab Report", "Scan Report", "Hospital Bill"];
@@ -23,6 +23,9 @@ const defaultForm = {
   oil: "0", protein: "0", syrup: "0",
   expectedDays: "", dischargeDate: "", dischargeTime: "",
   notes: "", dischargeStatus: "Admitted",
+  // Follow-up & reminder tracking (mirrors OPD)
+  followUpDate: "", condition: "", followUpDesc: "", followUpStatus: "Pending",
+  reminderEnabled: false, reminderStatus: "Not Set", reminderSentDate: "",
 };
 
 // converts a backend datetime string ("2026-07-13T00:00:00.000Z") into a plain "YYYY-MM-DD" for <input type=date>
@@ -36,6 +39,13 @@ export default function IPDPatientForm({ editPatient, onDone }) {
     card: editPatient.card || 0,
     dailyCharges: (editPatient.dailyCharges || []).map(c => ({ ...c, date: toDateInput(c.date) })),
     medicines: editPatient.medicines || [],
+    followUpDate: toDateInput(editPatient.followUpDate),
+    condition: editPatient.condition || "",
+    followUpDesc: editPatient.followUpDesc || "",
+    followUpStatus: editPatient.followUpStatus || "Pending",
+    reminderEnabled: editPatient.reminderEnabled || false,
+    reminderStatus: editPatient.reminderStatus || "Not Set",
+    reminderSentDate: toDateInput(editPatient.reminderSentDate),
   } : defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState("");
@@ -193,6 +203,14 @@ export default function IPDPatientForm({ editPatient, onDone }) {
       oil:     parseInt(form.oil)     || 0,
       protein: parseInt(form.protein) || 0,
       syrup:   parseInt(form.syrup)   || 0,
+      // Follow-up & reminder tracking
+      followUpDate: form.followUpDate || "",
+      condition: form.condition || "",
+      followUpDesc: form.followUpDesc || "",
+      followUpStatus: form.followUpStatus || "Pending",
+      reminderEnabled: !!form.reminderEnabled,
+      reminderStatus: form.reminderEnabled ? (form.reminderStatus || "Pending") : "Not Set",
+      reminderSentDate: form.reminderSentDate || "",
     };
 
     try {
@@ -262,6 +280,44 @@ export default function IPDPatientForm({ editPatient, onDone }) {
             <FormInput label="Expected Stay (Days)"  type="number" value={form.expectedDays}   onChange={set("expectedDays")}  placeholder="Days" />
             <FormInput label="Discharge Date"        type="date"   value={form.dischargeDate}  onChange={set("dischargeDate")} />
             <FormInput label="Discharge Time"        type="time"   value={form.dischargeTime}  onChange={set("dischargeTime")} />
+          </div>
+
+          {/* Follow-up & reminder tracking — mirrors OPD's Visit/Reminder fields */}
+          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-600 dark:text-slate-300">
+              <Bell className="w-4 h-4" /> Follow-Up & Reminder
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <FormInput label="Follow-Up Date" type="date" value={form.followUpDate} onChange={set("followUpDate")} />
+              <FormSelect label="Condition" value={form.condition} onChange={set("condition")} options={["Stable","Improving","Chronic","Mild","Good","Critical"]} />
+              <FormSelect label="Follow-Up Status" value={form.followUpStatus} onChange={set("followUpStatus")} options={["Pending","Completed","Missed"]} />
+              <div>
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">Enable WhatsApp Reminder</label>
+                <div className="flex items-center gap-3 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, reminderEnabled: !f.reminderEnabled, reminderStatus: !f.reminderEnabled ? "Pending" : "Not Set" }))}
+                    className={`relative w-12 h-6 rounded-full transition-colors duration-200 focus:outline-none flex-shrink-0 ${
+                      form.reminderEnabled ? "bg-teal-500" : "bg-slate-200 dark:bg-slate-700"
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${form.reminderEnabled ? "translate-x-6" : "translate-x-0"}`} />
+                  </button>
+                  <span className="text-sm text-slate-600 dark:text-slate-400">
+                    {form.reminderEnabled ? "Enabled" : "Disabled"}
+                  </span>
+                </div>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-2">
+                <FormTextarea label="Follow-Up Description" value={form.followUpDesc} onChange={set("followUpDesc")} placeholder="Follow-up instructions..." />
+              </div>
+              {form.reminderEnabled && (
+                <>
+                  <FormSelect label="Reminder Status" value={form.reminderStatus} onChange={set("reminderStatus")} options={["Pending","Sent","Failed"]} />
+                  <FormInput label="Reminder Sent Date" type="date" value={form.reminderSentDate} onChange={set("reminderSentDate")} />
+                </>
+              )}
+            </div>
           </div>
         </SectionCard>
 
