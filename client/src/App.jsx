@@ -1,5 +1,4 @@
 // client/src/App.jsx
-// Replace your existing App.jsx with this file
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useState } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -116,7 +115,7 @@ function AppRoutes() {
         <Route path="/doctor/ipd/followups" element={< IPDFollowUps patients={ipdPatients} />} />
       </Route>
 
-    
+         
       <Route element={
         <ProtectedRoute role="doctor">
           <Layout />
