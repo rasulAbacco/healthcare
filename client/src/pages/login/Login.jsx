@@ -61,7 +61,7 @@ function routeFor(role, module) {
   if (r === "receptionist" && m === "OPD") return "/opd-dashboard";
   if (r === "receptionist" && m === "IPD") return "/ipd-dashboard";
   if (r === "doctor" && m === "OPD") return "/doctor/opd/dashboard";
-  if (r === "doctor" && m === "IPD") return "/doctor/ipd";
+  if (r === "doctor" && m === "IPD") return "/doctor/ipd/dashboard";
   if (r === "pharmacy") return "/pharmacy-dashboard";
   return "/login";
 }

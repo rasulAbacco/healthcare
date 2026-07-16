@@ -45,6 +45,7 @@ const menuConfig = {
     { label: "My Profile",   icon: UserRound,       to: "/profile" },
   ],
   "doctor-IPD": [
+    { label: "Dashboard", icon: LayoutDashboard, to: "/doctor/ipd/dashboard" },
     { label: "IPD Patients", icon: BedDouble, to: "/doctor/ipd" },
     { label: "Follow-Ups", icon: CalendarClock, to: "/doctor/ipd/followups" },
   ],
@@ -56,7 +57,7 @@ const menuConfig = {
     { label: "Expiry Alerts", icon: Clock,           to: "/pharmacy/expiry"     },
   ],
 };
-
+  
 export default function Sidebar({ collapsed, setCollapsed }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
