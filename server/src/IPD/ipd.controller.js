@@ -6,6 +6,13 @@ import {
   deleteObjectFromR2,
   deleteManyObjectsFromR2,
 } from "../lib/r2.js";
+import {
+  conditionToDb,
+  followUpStatusToDb,
+  reminderStatusToDb,
+  mapPatientEnums,
+} from "../utils/enumMapper.js";
+
 
 // ---------- helpers ----------
 
@@ -47,6 +54,9 @@ function buildPatientData(body) {
   const dischargeStatus = body.dischargeStatus || "Admitted";
   const status = dischargeStatus === "Discharged" ? "Discharged" : "Admitted";
 
+  const reminderEnabled =
+    body.reminderEnabled === true || body.reminderEnabled === "true";
+
   return {
     flat: {
       name: body.name,
@@ -65,15 +75,17 @@ function buildPatientData(body) {
       notes: body.notes || null,
 
       // --- Follow-up & reminder tracking (mirrors OPD) ---
+      // Frontend sends/expects display strings ("Pending", "Not Set", etc.);
+      // Prisma stores enum values ("PENDING", "NOT_SET", etc.). Convert here,
+      // right before the data is written.
       followUpDate: body.followUpDate ? new Date(body.followUpDate) : null,
-      condition: body.condition || null,
+      condition: conditionToDb(body.condition || null),
       followUpDesc: body.followUpDesc || null,
-      followUpStatus: body.followUpStatus || "Pending",
-      reminderEnabled:
-        body.reminderEnabled === true || body.reminderEnabled === "true",
-      reminderStatus: (body.reminderEnabled === true || body.reminderEnabled === "true")
-        ? (body.reminderStatus || "Pending")
-        : "Not Set",
+      followUpStatus: followUpStatusToDb(body.followUpStatus || "Pending"),
+      reminderEnabled,
+      reminderStatus: reminderStatusToDb(
+        reminderEnabled ? (body.reminderStatus || "Pending") : "Not Set"
+      ),
       reminderSentDate: body.reminderSentDate ? new Date(body.reminderSentDate) : null,
 
       deposit,
@@ -174,7 +186,7 @@ export async function listPatients(req, res) {
     ]);
 
     res.json({
-      data: patients,
+      data: mapPatientEnums(patients),
       total,
       page: pageNum,
       totalPages: Math.ceil(total / limitNum) || 1,
@@ -196,7 +208,7 @@ export async function listFollowUps(req, res) {
       include: patientInclude,
       orderBy: { followUpDate: "asc" },
     });
-    res.json({ patients });
+    res.json({ patients: mapPatientEnums(patients) });
   } catch (err) {
     console.error("listFollowUps error:", err);
     res.status(500).json({ message: "Failed to fetch IPD follow-ups" });
@@ -211,7 +223,7 @@ export async function getPatient(req, res) {
       include: patientInclude,
     });
     if (!patient) return res.status(404).json({ message: "Patient not found" });
-    res.json(patient);
+    res.json(mapPatientEnums(patient));
   } catch (err) {
     console.error("getPatient error:", err);
     res.status(500).json({ message: "Failed to fetch patient" });
@@ -277,7 +289,7 @@ export async function createPatient(req, res) {
       include: patientInclude,
     });
 
-    res.status(201).json(patient);
+    res.status(201).json(mapPatientEnums(patient));
   } catch (err) {
     console.error("createPatient error:", err);
     res.status(500).json({ message: "Failed to create patient" });
@@ -312,7 +324,7 @@ export async function updatePatient(req, res) {
       });
     });
 
-    res.json(patient);
+    res.json(mapPatientEnums(patient));
   } catch (err) {
     console.error("updatePatient error:", err);
     res.status(500).json({ message: "Failed to update patient" });

@@ -49,7 +49,14 @@ const DURATIONS = ["3 days", "5 days", "7 days", "10 days", "Until discharge"];
 const INSTRUCTIONS = ["After food", "Before food", "With warm water", "As needed", ""];
 
 // --- follow-up / reminder pools ---
-const CONDITIONS = ["Stable", "Improving", "Chronic", "Mild", "Good", "Critical"];
+const CONDITIONS = [
+  "STABLE",
+  "IMPROVING",
+  "CHRONIC",
+  "MILD",
+  "GOOD",
+  "CRITICAL",
+];
 const FOLLOWUP_DESC_POOL = [
   "Review wound healing and remove sutures if fully closed",
   "Repeat blood work to confirm recovery",
@@ -165,9 +172,9 @@ function buildFollowUp({ admissionDate, dischargeDate, isDischarged, stayDays, e
       followUpDate: null,
       condition: randomBool(0.5) ? randomChoice(CONDITIONS) : null,
       followUpDesc: null,
-      followUpStatus: "Pending",
+      followUpStatus: "PENDING",
       reminderEnabled: false,
-      reminderStatus: "Not Set",
+      reminderStatus: "NOT_SET",
       reminderSentDate: null,
     };
   }
@@ -186,23 +193,41 @@ function buildFollowUp({ admissionDate, dischargeDate, isDischarged, stayDays, e
   // future dates are still open.
   let followUpStatus;
   if (isPast) {
-    followUpStatus = randomChoice(["Completed", "Completed", "Completed", "Missed", "Missed", "Pending"]);
+  followUpStatus = randomChoice([
+    "COMPLETED",
+    "COMPLETED",
+    "COMPLETED",
+    "MISSED",
+    "MISSED",
+    "PENDING",
+  ]);
   } else {
-    followUpStatus = "Pending";
+    followUpStatus = "PENDING";
   }
 
   const condition = randomChoice(CONDITIONS);
   const followUpDesc = randomChoice(FOLLOWUP_DESC_POOL) || null;
 
   const reminderEnabled = randomBool(0.6);
-  let reminderStatus = "Not Set";
+  let reminderStatus = "NOT_SET";
   let reminderSentDate = null;
 
   if (reminderEnabled) {
     if (isPast) {
-      reminderStatus = randomChoice(["Sent", "Sent", "Sent", "Failed", "Pending"]);
+      reminderStatus = randomChoice([
+        "SENT",
+        "SENT",
+        "SENT",
+        "FAILED",
+        "PENDING",
+      ]);
     } else {
-      reminderStatus = randomChoice(["Pending", "Pending", "Pending", "Sent"]);
+      reminderStatus = randomChoice([
+        "PENDING",
+        "PENDING",
+        "PENDING",
+        "SENT",
+      ]);   
     }
     if (reminderStatus === "Sent") {
       reminderSentDate = new Date(followUpDate);

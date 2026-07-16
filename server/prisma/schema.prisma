@@ -22,34 +22,48 @@ model User {
 }
 
 model IPD_Patient {
-  id               String            @id @default(cuid())
-  serialNumber     String            @unique
+  id               String   @id @default(cuid())
+  serialNumber     String   @unique
   name             String
   age              Int
   gender           String
   phone            String?
   aadhar           String?
+
   admissionDate    DateTime
   admissionTime    String
   expectedDays     Int?
+
   dischargeDate    DateTime?
   dischargeTime    String?
-  status           String            @default("Admitted")
-  dischargeStatus  String            @default("Admitted")
+  status           String   @default("Admitted")
+  dischargeStatus  String   @default("Admitted")
   notes            String?
-  deposit          Float             @default(0)
-  cash             Float             @default(0)
-  upi              Float             @default(0)
-  card             Float             @default(0)
-  totalPaid        Float             @default(0)
-  totalStay        Float             @default(0)
-  balance          Float             @default(0)
-  settlementStatus String            @default("Pending")
-  oil              Int               @default(0)
-  protein          Int               @default(0)
-  syrup            Int               @default(0)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+
+  followUpDate     DateTime?
+  condition        PatientCondition?
+  followUpDesc     String?
+  followUpStatus   FollowUpStatus @default(PENDING)
+  reminderEnabled  Boolean @default(false)
+  reminderStatus   ReminderStatus @default(NOT_SET)
+  reminderSentDate DateTime?
+
+  deposit          Float @default(0)
+  cash             Float @default(0)
+  upi              Float @default(0)
+  card             Float @default(0)
+  totalPaid        Float @default(0)
+  totalStay        Float @default(0)
+  balance          Float @default(0)
+  settlementStatus String @default("Pending")
+
+  oil              Int @default(0)
+  protein          Int @default(0)
+  syrup            Int @default(0)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
   dailyCharges     IPD_DailyCharge[]
   documents        IPD_Document[]
   medicines        IPD_Medicine[]

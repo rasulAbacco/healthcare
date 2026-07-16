@@ -26,7 +26,7 @@ import DoctorOPDLayout from "./pages/doctor/DoctorOPDLayout";
 import { DoctorOPDDashboard } from "./pages/doctor/DoctorOPDDashboard";
 import { DoctorOPDRevenue } from "./pages/doctor/DoctorOPDRevenue";
 import { DoctorIPDDashboard } from "./pages/doctor/DoctorIPDDashboard";
-
+import {IPDDoctorDashboard} from "./pages/doctor/IPDDoctorDashboard"
 import Profile from "./pages/profile/Profile";
 
 import PharmacyDashboard from "./pages/pharmacy/PharmacyDashboard";
@@ -34,6 +34,7 @@ import PharmacyMedicineList from "./pages/pharmacy/PharmacyMedicineList";
 import PharmacyMedicineForm from "./pages/pharmacy/PharmacyMedicineForm";
 import PharmacyStockHistory from "./pages/pharmacy/PharmacyStockHistory";
 import PharmacyExpiryAlerts from "./pages/pharmacy/PharmacyExpiryAlerts";
+import { Import } from "lucide-react";
 
 function AppRoutes() {
   const { user, initializing } = useAuth();
@@ -112,6 +113,8 @@ function AppRoutes() {
           <Layout />
         </ProtectedRoute>
       }>
+        
+        <Route path="/doctor/ipd/dashboard" element={<IPDDoctorDashboard patients={ipdPatients} />} />
         <Route path="/doctor/ipd" element={<DoctorIPDDashboard patients={ipdPatients} />} />
         <Route path="/doctor/ipd/followups" element={< IPDFollowUps patients={ipdPatients} />} />
       </Route>
