@@ -1,4 +1,5 @@
 // client/src/App.jsx
+// all routes 
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useState } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -8,7 +9,7 @@ import { opdPatients as initOPD, ipdPatients as initIPD } from "./data/dummyData
 import Login from "./pages/login/Login";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./routes/ProtectedRoute";
-                       
+
 import OPDDashboard from "./pages/opd/OPDDashboard";
 import OPDPatientList from "./pages/opd/OPDPatientList";
 import OPDPatientForm from "./pages/opd/OPDPatientForm";

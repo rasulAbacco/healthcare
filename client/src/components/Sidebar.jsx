@@ -56,7 +56,7 @@ const menuConfig = {
     { label: "Expiry Alerts", icon: Clock,           to: "/pharmacy/expiry"     },
   ],
 };
-
+  
 export default function Sidebar({ collapsed, setCollapsed }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
