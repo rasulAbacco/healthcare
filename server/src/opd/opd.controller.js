@@ -66,6 +66,47 @@ export async function listFollowUps(req, res) {
   }
 }
 
+// GET /api/opd/patients/stats  (for the OPD dashboard — Doctor + Receptionist)
+// IMPORTANT: must be registered before "/:id" in the routes file, same
+// reason as /followups above.
+export async function getStats(req, res) {
+  try {
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    const [allPatients, followUps] = await Promise.all([
+      prisma.oPDPatient.findMany({ orderBy: { visitDate: "desc" } }),
+      prisma.oPDPatient.findMany({ where: { followUpDate: { not: null } } }),
+    ]);
+
+    const isToday = (p) => p.visitDate.toISOString().split("T")[0] === todayStr;
+
+    const seenToday = allPatients.filter(isToday).length;
+    const pendingFollowUps = followUps.filter((f) => f.followUpStatus === "PENDING").length;
+    const criticalPatients = allPatients.filter((p) => p.condition === "CRITICAL");
+
+    const totalRevenue = allPatients.reduce((s, p) => s + p.total, 0);
+    const todayRevenue = allPatients.filter(isToday).reduce((s, p) => s + p.total, 0);
+    const todayCash = allPatients.filter(isToday).reduce((s, p) => s + p.cash, 0);
+    const todayUpi = allPatients.filter(isToday).reduce((s, p) => s + p.upi, 0);
+
+    return res.status(200).json({
+      totalPatients: allPatients.length,
+      seenToday,
+      pendingFollowUps,
+      criticalCount: criticalPatients.length,
+      totalRevenue,
+      todayRevenue,
+      todayCash,
+      todayUpi,
+      recentPatients: allPatients.slice(0, 5).map(fromDbPatient),
+      criticalPatients: criticalPatients.slice(0, 5).map(fromDbPatient),
+    });
+  } catch (err) {
+    console.error("Get OPD stats error:", err);
+    return res.status(500).json({ message: "Could not fetch OPD stats." });
+  }
+}
+
 // GET /api/opd/patients/:id
 export async function getPatient(req, res) {
   try {
@@ -84,10 +125,10 @@ export async function getPatient(req, res) {
 // POST /api/opd/patients
 export async function createPatient(req, res) {
   try {
-    const { name, age, gender, fee, visitDate } = req.body;
-    if (!name || !age || !gender || !fee || !visitDate) {
+    const { name, age, gender, visitDate } = req.body;
+    if (!name || !age || !gender || !visitDate) {
       return res.status(400).json({
-        message: "name, age, gender, fee, and visitDate are required.",
+        message: "name, age, gender, and visitDate are required.",
       });
     }
 

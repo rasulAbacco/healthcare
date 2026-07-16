@@ -5,6 +5,7 @@ import {
   listPatients,
   listFollowUps,
   getPatient,
+  getStats,
   createPatient,
   updatePatient,
   deletePatient,
@@ -18,8 +19,10 @@ const router = Router();
 // (covers both receptionists and doctors who work OPD).
 router.use(requireAuth, requireModule("OPD"));
 
-// IMPORTANT: /followups must be declared BEFORE /:id, otherwise Express
-// would treat "followups" as an :id value and hit getPatient instead.
+// IMPORTANT: /stats and /followups must be declared BEFORE /:id, otherwise
+// Express would treat "stats"/"followups" as an :id value and hit
+// getPatient instead.
+router.get("/stats", getStats);
 router.get("/followups", listFollowUps);
 
 router.get("/", listPatients);

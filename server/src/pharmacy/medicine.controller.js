@@ -44,7 +44,7 @@ export async function createMedicine(req, res) {
   try {
     const {
       serialNumber, drugName, genericName, category, manufacturer,
-      batchNumber, purchasePrice, sellingPrice, quantity, reorderLevel,
+      batchNumber, purchasePrice, sellingPrice, unitsPerPack, quantity, reorderLevel,
       expiryDate, supplierName, notes,
     } = req.body;
 
@@ -65,6 +65,10 @@ export async function createMedicine(req, res) {
     }
 
     const initialQuantity = parseInt(quantity, 10) || 0;
+    // How many tablets/units come in one pack — purchasePrice/sellingPrice
+    // are entered per pack, so this is required to get a per-unit price.
+    // Defaults to 1 (i.e. "price already is per unit") if not provided.
+    const unitsPerPackNum = Math.max(parseInt(unitsPerPack, 10) || 1, 1);
 
     const medicine = await prisma.medicine.create({
       data: {
@@ -76,6 +80,7 @@ export async function createMedicine(req, res) {
         batchNumber,
         purchasePrice: parseFloat(purchasePrice) || 0,
         sellingPrice: parseFloat(sellingPrice) || 0,
+        unitsPerPack: unitsPerPackNum,
         quantity: initialQuantity,
         // Permanent record of this batch's starting count. Unlike `quantity`
         // (which Add/Reduce/Adjust Stock and OPD prescriptions change every
@@ -119,7 +124,7 @@ export async function updateMedicine(req, res) {
 
     const {
       serialNumber, drugName, genericName, category, manufacturer,
-      batchNumber, purchasePrice, sellingPrice, reorderLevel,
+      batchNumber, purchasePrice, sellingPrice, unitsPerPack, reorderLevel,
       expiryDate, supplierName, notes,
     } = req.body;
 
@@ -137,6 +142,7 @@ export async function updateMedicine(req, res) {
     if (batchNumber !== undefined) data.batchNumber = batchNumber;
     if (purchasePrice !== undefined) data.purchasePrice = parseFloat(purchasePrice) || 0;
     if (sellingPrice !== undefined) data.sellingPrice = parseFloat(sellingPrice) || 0;
+    if (unitsPerPack !== undefined) data.unitsPerPack = Math.max(parseInt(unitsPerPack, 10) || 1, 1);
     if (reorderLevel !== undefined) data.reorderLevel = parseInt(reorderLevel, 10) || 0;
     if (expiryDate !== undefined) data.expiryDate = new Date(expiryDate);
     if (supplierName !== undefined) data.supplierName = supplierName || null;
@@ -181,7 +187,78 @@ export async function deleteMedicine(req, res) {
   }
 }
 
-// POST /api/pharmacy/medicines/:id/stock
+// GET /api/pharmacy/medicines/stats  (for the Pharmacy dashboard)
+// Computes inventory value using per-UNIT price (purchasePrice/sellingPrice
+// ÷ unitsPerPack), since quantity is tracked in individual units while the
+// prices entered are per pack/strip/box. See the `unitsPerPack` field
+// comment in schema.prisma for the full reasoning.
+export async function getMedicineStats(req, res) {
+  try {
+    const medicines = await prisma.medicine.findMany({ include: { category: true } });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const thirtyDaysOut = new Date(today);
+    thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
+
+    let totalPurchaseValue = 0;
+    let totalSellingValue = 0;
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+    let expiredCount = 0;
+    let expiringSoonCount = 0;
+
+    const lowStockItems = [];
+    const expiringSoonItems = [];
+
+    for (const m of medicines) {
+      const unitsPerPack = m.unitsPerPack && m.unitsPerPack > 0 ? m.unitsPerPack : 1;
+      const purchasePricePerUnit = m.purchasePrice / unitsPerPack;
+      const sellingPricePerUnit = m.sellingPrice / unitsPerPack;
+
+      totalPurchaseValue += purchasePricePerUnit * m.quantity;
+      totalSellingValue += sellingPricePerUnit * m.quantity;
+
+      if (m.quantity <= 0) {
+        outOfStockCount += 1;
+      } else if (m.quantity <= m.reorderLevel) {
+        lowStockCount += 1;
+        lowStockItems.push({
+          id: m.id, drugName: m.drugName, quantity: m.quantity, reorderLevel: m.reorderLevel,
+        });
+      }
+
+      const expiry = new Date(m.expiryDate);
+      if (expiry < today) {
+        expiredCount += 1;
+      } else if (expiry <= thirtyDaysOut) {
+        expiringSoonCount += 1;
+        expiringSoonItems.push({
+          id: m.id, drugName: m.drugName, expiryDate: expiry.toISOString().split("T")[0],
+        });
+      }
+    }
+
+    const categoryCount = await prisma.category.count();
+
+    return res.status(200).json({
+      totalMedicines: medicines.length,
+      totalCategories: categoryCount,
+      totalPurchaseValue: Math.round(totalPurchaseValue * 100) / 100,
+      totalSellingValue: Math.round(totalSellingValue * 100) / 100,
+      potentialProfit: Math.round((totalSellingValue - totalPurchaseValue) * 100) / 100,
+      lowStockCount,
+      outOfStockCount,
+      expiredCount,
+      expiringSoonCount,
+      lowStockItems: lowStockItems.slice(0, 5),
+      expiringSoonItems: expiringSoonItems.slice(0, 5),
+    });
+  } catch (err) {
+    console.error("Get medicine stats error:", err);
+    return res.status(500).json({ message: "Could not fetch pharmacy stats." });
+  }
+}
 // Body: { action: "Add Stock" | "Reduce Stock" | "Stock Adjustment", quantity, reason }
 // Updates the medicine's quantity AND logs a StockHistory row, atomically.
 export async function addStockEntry(req, res) {

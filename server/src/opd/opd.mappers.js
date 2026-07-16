@@ -45,7 +45,10 @@ export function toDbPatient(body) {
     gender: body.gender ? GENDER_TO_DB[body.gender] : undefined,
     place: body.place || null,
     phone: body.phone || null,
-    fee: body.fee !== undefined && body.fee !== "" ? parseFloat(body.fee) : undefined,
+    // Consultation Fee was removed from the registration form — this stays
+    // for backward compatibility with existing records, always 0 for new
+    // ones unless something else sets it later.
+    fee: body.fee !== undefined && body.fee !== "" ? parseFloat(body.fee) : 0,
     cash: body.cash !== undefined && body.cash !== "" ? parseFloat(body.cash) : 0,
     upi: body.upi !== undefined && body.upi !== "" ? parseFloat(body.upi) : 0,
     total:

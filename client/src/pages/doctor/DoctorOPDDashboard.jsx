@@ -8,12 +8,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import {
-  Users, CalendarClock, AlertTriangle, Activity, Loader2, ArrowRight,
+  Users, CalendarClock, AlertTriangle, Activity, Loader2, ArrowRight, IndianRupee, Wallet,
 } from "lucide-react";
-
-function todayStr() {
-  return new Date().toISOString().split("T")[0];
-}
 
 function StatCard({ icon: Icon, label, value, accent }) {
   return (
@@ -40,8 +36,7 @@ const conditionColors = {
 
 export function DoctorOPDDashboard() {
   const navigate = useNavigate();
-  const [patients, setPatients] = useState([]);
-  const [followUps, setFollowUps] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -51,13 +46,9 @@ export function DoctorOPDDashboard() {
       setLoading(true);
       setError("");
       try {
-        const [patientsRes, followUpsRes] = await Promise.all([
-          api.get("/opd/patients"),
-          api.get("/opd/patients/followups"),
-        ]);
+        const data = await api.get("/opd/patients/stats");
         if (cancelled) return;
-        setPatients(patientsRes.patients || []);
-        setFollowUps(followUpsRes.patients || []);
+        setStats(data);
       } catch (err) {
         if (!cancelled) setError(err.message || "Could not load dashboard data.");
       } finally {
@@ -86,13 +77,11 @@ export function DoctorOPDDashboard() {
     );
   }
 
-  const today = todayStr();
-  const seenToday = patients.filter(p => p.visitDate === today).length;
-  const pendingFollowUps = followUps.filter(f => f.followUpStatus === "Pending").length;
-  const criticalPatients = patients.filter(p => p.condition === "Critical");
-  const recentPatients = [...patients]
-    .sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate))
-    .slice(0, 5);
+  const {
+    totalPatients, seenToday, pendingFollowUps, criticalCount,
+    totalRevenue, todayRevenue, todayCash, todayUpi,
+    recentPatients, criticalPatients,
+  } = stats;
 
   return (
     <div className="space-y-6">
@@ -107,7 +96,7 @@ export function DoctorOPDDashboard() {
         <StatCard
           icon={Activity}
           label="Total OPD Patients"
-          value={patients.length}
+          value={totalPatients}
           accent={{ iconWrap: "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" }}
         />
         <StatCard
@@ -119,8 +108,36 @@ export function DoctorOPDDashboard() {
         <StatCard
           icon={AlertTriangle}
           label="Critical Patients"
-          value={criticalPatients.length}
+          value={criticalCount}
           accent={{ iconWrap: "bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400" }}
+        />
+      </div>
+
+      {/* Revenue stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          icon={IndianRupee}
+          label="Today's Revenue"
+          value={`₹${todayRevenue.toLocaleString()}`}
+          accent={{ iconWrap: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" }}
+        />
+        <StatCard
+          icon={Wallet}
+          label="Today — Cash"
+          value={`₹${todayCash.toLocaleString()}`}
+          accent={{ iconWrap: "bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400" }}
+        />
+        <StatCard
+          icon={Wallet}
+          label="Today — UPI"
+          value={`₹${todayUpi.toLocaleString()}`}
+          accent={{ iconWrap: "bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400" }}
+        />
+        <StatCard
+          icon={IndianRupee}
+          label="Total Revenue (All Time)"
+          value={`₹${totalRevenue.toLocaleString()}`}
+          accent={{ iconWrap: "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" }}
         />
       </div>
 

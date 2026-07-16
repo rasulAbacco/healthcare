@@ -8,11 +8,16 @@ import {
   updateMedicine,
   deleteMedicine,
   addStockEntry,
+  getMedicineStats,
 } from "./medicine.controller.js";
 
 const router = Router();
 
 router.use(requireAuth);
+
+// Must be registered BEFORE "/:id", otherwise Express treats "stats" as an
+// :id value and this route is never reached.
+router.get("/stats", requireModule("PHARMACY"), getMedicineStats);
 
 // Read-only: OPD needs this to show medicine names/stock counts when
 // prescribing. Pharmacy obviously needs it too.

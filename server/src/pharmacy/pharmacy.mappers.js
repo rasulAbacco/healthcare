@@ -40,6 +40,7 @@ export function fromDbMedicine(medicine) {
     batchNumber: medicine.batchNumber,
     purchasePrice: medicine.purchasePrice,
     sellingPrice: medicine.sellingPrice,
+    unitsPerPack: medicine.unitsPerPack,
     quantity: medicine.quantity,
     initialQuantity: medicine.initialQuantity,
     reorderLevel: medicine.reorderLevel,

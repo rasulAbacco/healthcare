@@ -6,7 +6,7 @@ import { ArrowLeft, User, CreditCard, ClipboardList, Save, X, Bell, Loader2, Pil
 import { api } from "../../lib/api";
 
 const emptyForm = {
-  name: "", age: "", gender: "", place: "", phone: "", fee: "",
+  name: "", age: "", gender: "", place: "", phone: "",
   cash: "", upi: "", visitDate: new Date().toISOString().split("T")[0],
   notes: "", followUpDate: "", condition: "", followUpDesc: "",
   followUpStatus: "Pending",
@@ -244,25 +244,6 @@ export default function OPDPatientForm({ editPatient, onDone }) {
             <FormSelect label="Gender"               value={form.gender} onChange={set("gender")} options={["Male","Female","Other"]} required />
             <FormInput label="Place"                 value={form.place}  onChange={set("place")}  placeholder="City / Town" />
             <FormInput label="Phone Number"          value={form.phone}  onChange={set("phone")}  placeholder="10-digit mobile" />
-            <FormInput label="Consultation Fee (₹)" type="number" value={form.fee} onChange={set("fee")} placeholder="0.00" required />
-          </div>
-        </SectionCard>
-
-        <SectionCard title="Payment Details" icon={CreditCard}>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <FormInput label="Cash Amount (₹)"  type="number" value={form.cash} onChange={set("cash")} placeholder="0.00" />
-            <FormInput label="UPI Amount (₹)"   type="number" value={form.upi}  onChange={set("upi")}  placeholder="0.00" />
-            <div>
-              <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">Total Amount</label>
-              <div className="bg-emerald-50 dark:bg-slate-800/50 border border-emerald-200 dark:border-emerald-500/30 rounded-xl px-4 py-2.5 text-emerald-700 dark:text-emerald-400 font-bold text-lg">
-                ₹{total.toLocaleString()}
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 flex gap-2 flex-wrap">
-            {cash > 0 && <span className="text-xs px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20">Cash: ₹{cash}</span>}
-            {upi  > 0 && <span className="text-xs px-3 py-1 rounded-full bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-500/20">UPI: ₹{upi}</span>}
-            {cash === 0 && upi === 0 && <span className="text-xs text-slate-400 dark:text-slate-500">Enter cash and/or UPI amounts above</span>}
           </div>
         </SectionCard>
 
@@ -378,6 +359,29 @@ export default function OPDPatientForm({ editPatient, onDone }) {
           </div>
         </SectionCard>
 
+        <SectionCard title="Payment Details" icon={CreditCard}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <FormInput label="Cash Amount (₹)"  type="number" value={form.cash} onChange={set("cash")} placeholder="0.00" />
+            <FormInput label="UPI Amount (₹)"   type="number" value={form.upi}  onChange={set("upi")}  placeholder="0.00" />
+            <div>
+              <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">Total Amount</label>
+              <div className="bg-emerald-50 dark:bg-slate-800/50 border border-emerald-200 dark:border-emerald-500/30 rounded-xl px-4 py-2.5 text-emerald-700 dark:text-emerald-400 font-bold text-lg">
+                ₹{total.toLocaleString()}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex gap-2 flex-wrap">
+            {cash > 0 && <span className="text-xs px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20">Cash: ₹{cash}</span>}
+            {upi  > 0 && <span className="text-xs px-3 py-1 rounded-full bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-500/20">UPI: ₹{upi}</span>}
+            {cash === 0 && upi === 0 && <span className="text-xs text-slate-400 dark:text-slate-500">Enter cash and/or UPI amounts above</span>}
+          </div>
+        </SectionCard>
+
+        {/* ===================== REMINDER SETTINGS — DISABLED UNTIL WHATSAPP IS WIRED UP =====================
+            Uncomment this whole block once the WhatsApp integration is implemented.
+            form.reminderEnabled / reminderStatus / reminderSentDate are still part of
+            `emptyForm` and get saved/loaded as normal — only this UI section is hidden.
+
         <SectionCard title="Reminder Settings" icon={Bell}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
@@ -405,6 +409,7 @@ export default function OPDPatientForm({ editPatient, onDone }) {
             )}
           </div>
         </SectionCard>
+        ======================================================================================================== */}
 
         <div className="flex flex-col sm:flex-row gap-3">
           <button

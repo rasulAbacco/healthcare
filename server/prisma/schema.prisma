@@ -37,16 +37,6 @@ model IPD_Patient {
   status           String            @default("Admitted")
   dischargeStatus  String            @default("Admitted")
   notes            String?
-
-  // --- Follow-up & reminder tracking (mirrors OPD's follow-up flow) ---
-  followUpDate     DateTime?         @db.Date
-  condition        String?
-  followUpDesc     String?
-  followUpStatus   String            @default("Pending")
-  reminderEnabled  Boolean           @default(false)
-  reminderStatus   String            @default("Not Set")
-  reminderSentDate DateTime?         @db.Date
-
   deposit          Float             @default(0)
   cash             Float             @default(0)
   upi              Float             @default(0)
@@ -135,7 +125,7 @@ model OPDPatient {
   gender              Gender
   place               String?
   phone               String?
-  fee                 Float
+  fee                 Float                @default(0)
   cash                Float                @default(0)
   upi                 Float                @default(0)
   total               Float                @default(0)
@@ -173,6 +163,13 @@ model medicine {
   batchNumber         String
   purchasePrice       Float
   sellingPrice        Float
+  // How many individual tablets/units are in one pack/strip/box.
+  // purchasePrice/sellingPrice are per PACK; quantity (below) is tracked in
+  // individual UNITS (matches how OPD prescriptions and stock actions already
+  // subtract/add). Per-unit price = purchasePrice/sellingPrice ÷ unitsPerPack.
+  // Defaults to 1 so existing rows (and any medicine where price already IS
+  // per-unit) keep working with no data migration required.
+  unitsPerPack        Int                  @default(1)
   quantity            Int                  @default(0)
   initialQuantity     Int                  @default(0)
   reorderLevel        Int                  @default(0)
