@@ -2,6 +2,7 @@
 import { Router } from "express";
 import {
   listPatients,
+  listFollowUps,
   getPatient,
   getStats,
   createPatient,
@@ -14,8 +15,11 @@ import { uploadIpdDocument } from "../middleware/upload.js";
 
 const router = Router();
 
-// Stats must be registered before "/:id" so it isn't swallowed by the param route
+// Stats and Followups must be registered before "/:id" so they aren't
+// swallowed by the param route (Express would treat "stats"/"followups"
+// as an :id value otherwise).
 router.get("/stats", getStats);
+router.get("/followups", listFollowUps);
 
 router.get("/", listPatients);
 router.get("/:id", getPatient);

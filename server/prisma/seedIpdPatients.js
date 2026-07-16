@@ -3,13 +3,15 @@
 // Generates 100 realistic IPD patient records (with daily charges and
 // prescribed medicines) so the dashboard, list, and payment pages have real
 // data to work with instead of an empty table. Mirrors seedOpdPatients.js.
+// Also seeds follow-up/reminder data (followUpDate, condition, followUpDesc,
+// followUpStatus, reminderEnabled, reminderStatus, reminderSentDate) so the
+// IPD Follow-Ups page has real records across all three tabs (pending
+// follow-ups, incoming-within-7-days, and pending reminders).
 import "dotenv/config";
+import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
-
+const prisma = new PrismaClient();
 const FIRST_NAMES_MALE = [
   "Ramesh", "Arun", "Vijay", "Suresh", "Mohan", "Karthik", "Senthil", "Gopal",
   "Balaji", "Narayanan", "Ashwin", "Prakash", "Dinesh", "Sathish", "Manoj",
@@ -45,6 +47,22 @@ const NOTES_POOL = [
 const DOSAGE_FREQUENCIES = ["1-0-1", "1-1-1", "0-0-1", "1-0-0", "1-1-0"];
 const DURATIONS = ["3 days", "5 days", "7 days", "10 days", "Until discharge"];
 const INSTRUCTIONS = ["After food", "Before food", "With warm water", "As needed", ""];
+
+// --- follow-up / reminder pools ---
+const CONDITIONS = ["Stable", "Improving", "Chronic", "Mild", "Good", "Critical"];
+const FOLLOWUP_DESC_POOL = [
+  "Review wound healing and remove sutures if fully closed",
+  "Repeat blood work to confirm recovery",
+  "Physiotherapy progress check",
+  "Follow-up X-ray to confirm fracture healing",
+  "Monitor blood sugar levels post-discharge",
+  "Check blood pressure and cardiac recovery",
+  "Routine post-natal checkup for mother and baby",
+  "Review antibiotic course completion",
+  "General wellness check after discharge",
+  "Follow-up scan to confirm kidney stone clearance",
+  "",
+];
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -136,6 +154,73 @@ function buildMedicines(catalog) {
   return picks;
 }
 
+// Builds follow-up + reminder fields for a patient. Follow-ups are anchored
+// to the discharge date if the patient has been discharged (the realistic
+// case — you schedule a follow-up for after someone leaves), or to the
+// expected discharge date if they're still admitted.
+// ~65% of patients get a follow-up at all, matching OPD's seed density.
+function buildFollowUp({ admissionDate, dischargeDate, isDischarged, stayDays, expectedDays }) {
+  if (!randomBool(0.65)) {
+    return {
+      followUpDate: null,
+      condition: randomBool(0.5) ? randomChoice(CONDITIONS) : null,
+      followUpDesc: null,
+      followUpStatus: "Pending",
+      reminderEnabled: false,
+      reminderStatus: "Not Set",
+      reminderSentDate: null,
+    };
+  }
+
+  const baseDate = isDischarged
+    ? dischargeDate
+    : new Date(admissionDate.getTime() + (expectedDays || stayDays) * 24 * 60 * 60 * 1000);
+
+  const followUpDate = new Date(baseDate);
+  followUpDate.setDate(followUpDate.getDate() + randomInt(3, 21));
+
+  const today = new Date();
+  const isPast = followUpDate < today;
+
+  // Follow-up status: past dates have mostly resolved one way or another;
+  // future dates are still open.
+  let followUpStatus;
+  if (isPast) {
+    followUpStatus = randomChoice(["Completed", "Completed", "Completed", "Missed", "Missed", "Pending"]);
+  } else {
+    followUpStatus = "Pending";
+  }
+
+  const condition = randomChoice(CONDITIONS);
+  const followUpDesc = randomChoice(FOLLOWUP_DESC_POOL) || null;
+
+  const reminderEnabled = randomBool(0.6);
+  let reminderStatus = "Not Set";
+  let reminderSentDate = null;
+
+  if (reminderEnabled) {
+    if (isPast) {
+      reminderStatus = randomChoice(["Sent", "Sent", "Sent", "Failed", "Pending"]);
+    } else {
+      reminderStatus = randomChoice(["Pending", "Pending", "Pending", "Sent"]);
+    }
+    if (reminderStatus === "Sent") {
+      reminderSentDate = new Date(followUpDate);
+      reminderSentDate.setDate(reminderSentDate.getDate() - randomInt(1, 3));
+    }
+  }
+
+  return {
+    followUpDate,
+    condition,
+    followUpDesc,
+    followUpStatus,
+    reminderEnabled,
+    reminderStatus,
+    reminderSentDate,
+  };
+}
+
 async function buildPatient(serialNumber, catalog) {
   const isMale = randomBool();
   const firstName = isMale ? randomChoice(FIRST_NAMES_MALE) : randomChoice(FIRST_NAMES_FEMALE);
@@ -182,6 +267,14 @@ async function buildPatient(serialNumber, catalog) {
 
   const medicines = buildMedicines(catalog);
 
+  const followUp = buildFollowUp({
+    admissionDate,
+    dischargeDate,
+    isDischarged,
+    stayDays,
+    expectedDays,
+  });
+
   return {
     serialNumber,
     name: fullName,
@@ -198,6 +291,15 @@ async function buildPatient(serialNumber, catalog) {
     status,
     dischargeStatus,
     notes: randomChoice(NOTES_POOL) || null,
+
+    // --- follow-up & reminder tracking ---
+    followUpDate: followUp.followUpDate,
+    condition: followUp.condition,
+    followUpDesc: followUp.followUpDesc,
+    followUpStatus: followUp.followUpStatus,
+    reminderEnabled: followUp.reminderEnabled,
+    reminderStatus: followUp.reminderStatus,
+    reminderSentDate: followUp.reminderSentDate,
 
     deposit,
     cash,
@@ -241,7 +343,7 @@ async function main() {
     created += 1;
   }
 
-  console.log(`✅ Seeded ${created} IPD patients.`);
+  console.log(`✅ Seeded ${created} IPD patients (with follow-ups & reminders).`);
 }
 
 main()

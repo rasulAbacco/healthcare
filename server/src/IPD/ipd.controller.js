@@ -61,6 +61,18 @@ function buildPatientData(body) {
       dischargeStatus,
       notes: body.notes || null,
 
+      // --- Follow-up & reminder tracking (mirrors OPD) ---
+      followUpDate: body.followUpDate ? new Date(body.followUpDate) : null,
+      condition: body.condition || null,
+      followUpDesc: body.followUpDesc || null,
+      followUpStatus: body.followUpStatus || "Pending",
+      reminderEnabled:
+        body.reminderEnabled === true || body.reminderEnabled === "true",
+      reminderStatus: (body.reminderEnabled === true || body.reminderEnabled === "true")
+        ? (body.reminderStatus || "Pending")
+        : "Not Set",
+      reminderSentDate: body.reminderSentDate ? new Date(body.reminderSentDate) : null,
+
       deposit,
       cash,
       upi,
@@ -167,6 +179,24 @@ export async function listPatients(req, res) {
   } catch (err) {
     console.error("listPatients error:", err);
     res.status(500).json({ message: "Failed to fetch IPD patients" });
+  }
+}
+
+// GET /api/ipd/patients/followups
+// Anyone with an actual follow-up date set, soonest first — mirrors the OPD
+// follow-ups endpoint so IPDFollowUps.jsx can reuse the same UX/shape.
+// IMPORTANT: must be registered before "/:id" in the routes file.
+export async function listFollowUps(req, res) {
+  try {
+    const patients = await prisma.iPD_Patient.findMany({
+      where: { followUpDate: { not: null } },
+      include: patientInclude,
+      orderBy: { followUpDate: "asc" },
+    });
+    res.json({ patients });
+  } catch (err) {
+    console.error("listFollowUps error:", err);
+    res.status(500).json({ message: "Failed to fetch IPD follow-ups" });
   }
 }
 

@@ -79,7 +79,7 @@ export default function IPDDashboard() {
             {activePatients.length === 0 ? (
               <p className="p-5 text-xs text-slate-400 text-center">No active inpatients currently admitted.</p>
             ) : (
-              activePatients.map(p => (
+              activePatients.slice(0, 8).map(p => (
                 <div key={p.id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                   <div className="w-9 h-9 rounded-full bg-violet-50 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center font-bold text-sm border border-violet-100 dark:border-transparent flex-shrink-0">
                     {p.name[0]}
