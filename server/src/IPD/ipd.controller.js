@@ -1,8 +1,11 @@
 // server/src/ipd.controller.js
 import prisma from "../lib/prisma.js";
-import fs from "fs";
-import path from "path";
-import { UPLOAD_URL_PREFIX } from "../middleware/upload.js";
+import {
+  buildDocumentKey,
+  uploadBufferToR2,
+  deleteObjectFromR2,
+  deleteManyObjectsFromR2,
+} from "../lib/r2.js";
 
 // ---------- helpers ----------
 
@@ -321,9 +324,10 @@ export async function deletePatient(req, res) {
   try {
     const { id } = req.params;
 
-    // Clean up any uploaded document files from disk before cascade-deleting DB rows
+    // Clean up every document this patient has in R2 before cascade-deleting
+    // the DB rows, so nothing is ever left orphaned in the bucket.
     const docs = await prisma.iPD_Document.findMany({ where: { patientId: id } });
-    docs.forEach((d) => removeFileForUrl(d.url));
+    await deleteManyObjectsFromR2(docs.map((d) => d.key));
 
     await prisma.iPD_Patient.delete({ where: { id } }); // cascades to related tables
     res.json({ message: "Patient deleted" });
@@ -336,12 +340,6 @@ export async function deletePatient(req, res) {
 
 // ---------- documents ----------
 
-function removeFileForUrl(url) {
-  if (!url || !url.startsWith(UPLOAD_URL_PREFIX)) return;
-  const filePath = path.join(process.cwd(), url.replace(/^\//, ""));
-  fs.unlink(filePath, () => {}); // best-effort, ignore errors
-}
-
 // POST /api/ipd/patients/:id/documents  (multipart/form-data: file, type)
 export async function uploadDocument(req, res) {
   try {
@@ -351,11 +349,20 @@ export async function uploadDocument(req, res) {
 
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
+    // Object key follows: IPD documents/{SerialNumber}-{PatientName}/{unique}-{filename}
+    const key = buildDocumentKey(patient.serialNumber, patient.name, req.file.originalname);
+    const url = await uploadBufferToR2({
+      key,
+      buffer: req.file.buffer,
+      contentType: req.file.mimetype,
+    });
+
     const doc = await prisma.iPD_Document.create({
       data: {
         name: req.file.originalname,
         type: req.body.type || "Prescription",
-        url: `${UPLOAD_URL_PREFIX}/${req.file.filename}`,
+        url,
+        key,
         fileType: req.file.mimetype,
         patientId: id,
       },
@@ -364,7 +371,7 @@ export async function uploadDocument(req, res) {
     res.status(201).json(doc);
   } catch (err) {
     console.error("uploadDocument error:", err);
-    res.status(500).json({ message: "Failed to upload document" });
+    res.status(500).json({ message: err.message || "Failed to upload document" });
   }
 }
 
@@ -375,7 +382,7 @@ export async function deleteDocument(req, res) {
     const doc = await prisma.iPD_Document.findUnique({ where: { id: docId } });
     if (!doc) return res.status(404).json({ message: "Document not found" });
 
-    removeFileForUrl(doc.url);
+    await deleteObjectFromR2(doc.key);
     await prisma.iPD_Document.delete({ where: { id: docId } });
 
     res.json({ message: "Document deleted" });

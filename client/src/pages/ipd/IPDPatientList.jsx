@@ -8,9 +8,10 @@ import {
 import { fetchPatients, deletePatient as apiDeletePatient } from "./api/ipd.api";
 import IPDPatientForm from "./IPDPatientForm";
 import IPDPatientDetails from "./IPDPatientDetails";
-import { UserPlus, Search, Calendar, Clock, CreditCard } from "lucide-react";
+import { UserPlus, Search, Calendar, Clock, CreditCard, Paperclip, FileText } from "lucide-react";
 
 const PER_PAGE = 7;
+const LATEST_DOCS_SHOWN = 3;
 
 const settlementColors = {
   "Pending":        "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20",
@@ -26,6 +27,42 @@ const dischargeStatusColors = {
 
 // backend stores dates as ISO datetimes -> show just the date/time parts
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
+
+// Documents come back from the API with a ready-to-use Cloudflare R2 url —
+// clicking one just opens that url in a new tab.
+function DocumentsCell({ documents = [] }) {
+  const count = documents.length;
+
+  if (count === 0) {
+    return <span className="text-xs text-slate-400 dark:text-slate-500">No Documents</span>;
+  }
+
+  const latest = documents.slice(0, LATEST_DOCS_SHOWN);
+
+  return (
+    <div className="min-w-[160px]">
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-500/20 mb-1.5">
+        <Paperclip className="w-3 h-3" /> Documents ({count})
+      </span>
+      <div className="flex flex-col gap-0.5">
+        {latest.map((doc) => (
+          <a
+            key={doc.id}
+            href={doc.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 truncate max-w-[180px] transition-colors"
+            title={doc.name}
+          >
+            <FileText className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">{doc.name}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function IPDPatientList({ readOnly = false }) {
   const [patients, setPatients]         = useState([]);
@@ -149,7 +186,7 @@ export default function IPDPatientList({ readOnly = false }) {
                 <tr>
                   <Th>IPD No.</Th><Th>Patient</Th><Th>Admission</Th><Th>Time</Th>
                   <Th>Total Bill</Th><Th>Paid</Th><Th>Pending</Th>
-                  <Th>Settlement</Th><Th>Discharge</Th>
+                  <Th>Settlement</Th><Th>Discharge</Th><Th>Documents</Th>
                   {!readOnly && <Th>Actions</Th>}
                 </tr>
               </thead>
@@ -187,6 +224,9 @@ export default function IPDPatientList({ readOnly = false }) {
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${dischargeStatusColors[p.dischargeStatus] || dischargeStatusColors["Admitted"]}`}>
                         {p.dischargeStatus || "Admitted"}
                       </span>
+                    </Td>
+                    <Td>
+                      <DocumentsCell documents={p.documents} />
                     </Td>
                     {!readOnly && (
                       <Td>
@@ -266,6 +306,11 @@ export default function IPDPatientList({ readOnly = false }) {
                       <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs">Cleared</span>
                     )}
                   </div>
+                </div>
+
+                {/* Documents */}
+                <div className="border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
+                  <DocumentsCell documents={p.documents} />
                 </div>
 
                 <div className="flex justify-between items-center">

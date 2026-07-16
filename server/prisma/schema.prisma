@@ -119,6 +119,7 @@ model IPD_Document {
   name      String
   type      String
   url       String
+  key       String?     // Cloudflare R2 object key, e.g. "IPD documents/IPD-001-Henry/172...-report.pdf"
   fileType  String?
   patientId String
   createdAt DateTime    @default(now())

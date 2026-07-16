@@ -9,9 +9,9 @@ import {
 
 const docTypes = ["Prescription", "Lab Report", "Scan Report", "Hospital Bill"];
 
-// backend file urls are relative (e.g. "/uploads/ipd-documents/xyz.pdf") -> resolve against API origin
-const API_ORIGIN = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
-const resolveUrl = (url) => (url?.startsWith("http") ? url : `${API_ORIGIN}${url}`);
+// Documents now live in Cloudflare R2 — doc.url is already a full,
+// publicly-resolvable URL (e.g. https://pub-xxxx.r2.dev/IPD%20documents/...),
+// so it can be used directly with no origin-resolving needed.
 
 export default function IPDPatientDetails({ patient: initP, onBack, readOnly = false }) {
   const [p, setP]           = useState(initP);
@@ -213,11 +213,11 @@ export default function IPDPatientDetails({ patient: initP, onBack, readOnly = f
               {p.documents.map(doc => (
                 <div key={doc.id} className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
                   {isImage(doc.fileType) ? (
-                    <a href={resolveUrl(doc.url)} target="_blank" rel="noopener noreferrer">
-                      <img src={resolveUrl(doc.url)} alt={doc.name} className="w-full h-28 object-cover hover:opacity-90 transition-opacity" />
+                    <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                      <img src={doc.url} alt={doc.name} className="w-full h-28 object-cover hover:opacity-90 transition-opacity" />
                     </a>
                   ) : (
-                    <a href={resolveUrl(doc.url)} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center h-28 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors gap-2">
+                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center h-28 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors gap-2">
                       <Paperclip className="w-8 h-8 text-slate-400 dark:text-slate-500" />
                       <span className="text-xs text-slate-400 dark:text-slate-500">View</span>
                     </a>
