@@ -39,7 +39,7 @@ import PharmacyMedicineForm from "./pages/pharmacy/PharmacyMedicineForm";
 import PharmacyStockHistory from "./pages/pharmacy/PharmacyStockHistory";
 import PharmacyExpiryAlerts from "./pages/pharmacy/PharmacyExpiryAlerts";
 import { Import } from "lucide-react";
-
+ 
 function AppRoutes() {
   const { user, initializing } = useAuth();
   const [opdPatients, setOpdPatients] = useState(initOPD);
