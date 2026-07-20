@@ -5,9 +5,27 @@
 // AdminStaffAccounts.jsx instead.
 import { useState, useEffect } from "react";
 import { api } from "../../lib/api";
-import { UserPlus, Loader2, Pencil, Trash2, X, Check, Building2, Search } from "lucide-react";
+import { UserPlus, Loader2, Pencil, Trash2, X, Check, Building2, Search, Wallet } from "lucide-react";
 
-const emptyForm = { fullName: "", designation: "", phone: "", email: "", joiningDate: "", notes: "" };
+const emptyForm = {
+  fullName: "",
+  designation: "",
+  phone: "",
+  email: "",
+  joiningDate: "",
+  notes: "",
+  salary: "",
+  bankName: "",
+  ifscCode: "",
+  bankAccountNo: "",
+};
+
+function formatSalary(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const num = Number(value);
+  if (Number.isNaN(num)) return "—";
+  return `₹${num.toLocaleString("en-IN")}`;
+}
 
 export default function AdminEmployeeDirectory() {
   const [employees, setEmployees] = useState([]);
@@ -74,6 +92,10 @@ export default function AdminEmployeeDirectory() {
       email: emp.email || "",
       joiningDate: emp.joiningDate ? emp.joiningDate.split("T")[0] : "",
       notes: emp.notes || "",
+      salary: emp.salary ?? "",
+      bankName: emp.bankName || "",
+      ifscCode: emp.ifscCode || "",
+      bankAccountNo: emp.bankAccountNo || "",
     });
   };
 
@@ -145,10 +167,10 @@ export default function AdminEmployeeDirectory() {
       {showCreate && (
         <form onSubmit={handleCreate} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Full Name" value={createForm.fullName} onChange={(v) => setCreateForm(f => ({ ...f, fullName: v }))} />
+            <Field label="Full Name" value={createForm.fullName} onChange={(v) => setCreateForm(f => ({ ...f, fullName: v }))} placeholder="Full Name" />
             <Field label="Designation" value={createForm.designation} onChange={(v) => setCreateForm(f => ({ ...f, designation: v }))} placeholder="Nurse, Ward Boy, Cleaner..." />
-            <Field label="Phone" value={createForm.phone} onChange={(v) => setCreateForm(f => ({ ...f, phone: v }))} />
-            <Field label="Email" type="email" value={createForm.email} onChange={(v) => setCreateForm(f => ({ ...f, email: v }))} />
+            <Field label="Phone" value={createForm.phone} onChange={(v) => setCreateForm(f => ({ ...f, phone: v }))} placeholder="Phone Number" />
+            <Field label="Email" type="email" value={createForm.email} onChange={(v) => setCreateForm(f => ({ ...f, email: v }))} placeholder="Email" />
             <Field label="Joining Date" type="date" value={createForm.joiningDate} onChange={(v) => setCreateForm(f => ({ ...f, joiningDate: v }))} />
           </div>
           <div>
@@ -160,6 +182,43 @@ export default function AdminEmployeeDirectory() {
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-teal-500"
             />
           </div>
+
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-2 mb-3">
+              <Wallet className="w-3.5 h-3.5 text-teal-500" />
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Salary Details (optional)
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field
+                label="Salary (₹)"
+                type="number"
+                value={createForm.salary}
+                onChange={(v) => setCreateForm(f => ({ ...f, salary: v }))}
+                placeholder="e.g. 25000"
+              />
+              <Field
+                label="Bank Name"
+                value={createForm.bankName}
+                onChange={(v) => setCreateForm(f => ({ ...f, bankName: v }))}
+                placeholder="Bank Name"
+              />
+              <Field
+                label="IFSC Code"
+                value={createForm.ifscCode}
+                onChange={(v) => setCreateForm(f => ({ ...f, ifscCode: v.toUpperCase() }))}
+                placeholder="e.g. SBIN0001234"
+              />
+              <Field
+                label="Bank Account No."
+                value={createForm.bankAccountNo}
+                onChange={(v) => setCreateForm(f => ({ ...f, bankAccountNo: v }))}
+                placeholder="Bank Account No"
+              />
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <button type="submit" disabled={saving} className="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-950 text-sm font-semibold px-4 py-2.5 rounded-xl disabled:opacity-50">
               {saving ? "Adding..." : "Add Employee"}
@@ -194,10 +253,10 @@ export default function AdminEmployeeDirectory() {
       ) : (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[680px]">
+            <table className="w-full text-sm min-w-[820px]">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-900/50">
-                  {["Name", "Designation", "Contact", "Joined", "Status", "Actions"].map((h) => (
+                  {["Name", "Designation", "Contact", "Joined", "Salary", "Status", "Actions"].map((h) => (
                     <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
@@ -206,7 +265,7 @@ export default function AdminEmployeeDirectory() {
                 {filtered.map((emp) => (
                   <tr key={emp.id} className="border-t border-slate-100 dark:border-slate-800/50">
                     {editingId === emp.id ? (
-                      <td colSpan={6} className="px-5 py-4">
+                      <td colSpan={7} className="px-5 py-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                           <Field label="Full Name" value={editForm.fullName} onChange={(v) => setEditForm(f => ({ ...f, fullName: v }))} />
                           <Field label="Designation" value={editForm.designation} onChange={(v) => setEditForm(f => ({ ...f, designation: v }))} />
@@ -214,6 +273,22 @@ export default function AdminEmployeeDirectory() {
                           <Field label="Email" value={editForm.email} onChange={(v) => setEditForm(f => ({ ...f, email: v }))} />
                           <Field label="Joining Date" type="date" value={editForm.joiningDate} onChange={(v) => setEditForm(f => ({ ...f, joiningDate: v }))} />
                         </div>
+
+                        <div className="pt-2 mt-1 mb-3 border-t border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center gap-2 mt-3 mb-2">
+                            <Wallet className="w-3.5 h-3.5 text-teal-500" />
+                            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                              Salary Details (optional)
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <Field label="Salary (₹)" type="number" value={editForm.salary} onChange={(v) => setEditForm(f => ({ ...f, salary: v }))} />
+                            <Field label="Bank Name" value={editForm.bankName} onChange={(v) => setEditForm(f => ({ ...f, bankName: v }))} />
+                            <Field label="IFSC Code" value={editForm.ifscCode} onChange={(v) => setEditForm(f => ({ ...f, ifscCode: v.toUpperCase() }))} />
+                            <Field label="Bank Account No." value={editForm.bankAccountNo} onChange={(v) => setEditForm(f => ({ ...f, bankAccountNo: v }))} />
+                          </div>
+                        </div>
+
                         <div className="flex gap-2">
                           <button onClick={() => saveEdit(emp.id)} disabled={saving} className="flex items-center gap-1.5 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50">
                             <Check className="w-3.5 h-3.5" /> Save
@@ -232,6 +307,17 @@ export default function AdminEmployeeDirectory() {
                           <div>{emp.email || ""}</div>
                         </td>
                         <td className="px-5 py-3.5 text-slate-500 dark:text-slate-400">{emp.joiningDate?.split("T")[0]}</td>
+                        <td className="px-5 py-3.5 text-slate-600 dark:text-slate-300">
+                          <span
+                            title={
+                              emp.bankName || emp.ifscCode || emp.bankAccountNo
+                                ? `${emp.bankName || "—"} • IFSC: ${emp.ifscCode || "—"} • A/C: ${emp.bankAccountNo || "—"}`
+                                : "No bank details on file"
+                            }
+                          >
+                            {formatSalary(emp.salary)}
+                          </span>
+                        </td>
                         <td className="px-5 py-3.5">
                           <button
                             onClick={() => toggleActive(emp)}

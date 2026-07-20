@@ -32,6 +32,8 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminStaffAccounts from "./pages/admin/AdminStaffAccounts";
 import AdminEmployeeDirectory from "./pages/admin/AdminEmployeeDirectory";
 import AdminProfile from "./pages/admin/AdminProfile";
+import BiometricManagement from "./pages/admin/biometric/BiometricManagement";
+import BiometricStaffEmployee from "./pages/admin/biometric/BiometricStaffEmployee"
 
 import PharmacyDashboard from "./pages/pharmacy/PharmacyDashboard";
 import PharmacyMedicineList from "./pages/pharmacy/PharmacyMedicineList";
@@ -121,7 +123,7 @@ function AppRoutes() {
         <Route path="/doctor/ipd" element={<DoctorIPDDashboard patients={ipdPatients} />} />
       </Route>
 
-         {/* profile */}
+         {/* Admin Pages & profile */}
       <Route element={
         <ProtectedRoute role="admin">
           <Layout />
@@ -132,6 +134,8 @@ function AppRoutes() {
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/admin/staff"     element={<AdminStaffAccounts />} />
           <Route path="/admin/employees" element={<AdminEmployeeDirectory />} />
+          <Route path="/admin/biometric" element={<BiometricManagement />} /> 
+          <Route path="/admin/biometric/manage" element={<BiometricStaffEmployee />} /> {/* NEW */}
         </Route>
         {/* Own dedicated path/component (AdminProfile.jsx), not the shared
             /profile below — avoids re-creating the duplicate-path bug and
@@ -139,22 +143,7 @@ function AppRoutes() {
         <Route path="/admin/profile" element={<AdminProfile />} />
       </Route>
 
-      {/* Profile — shared across Doctor/Receptionist/Pharmacy (Admin has its
-          own dedicated AdminProfile.jsx at /admin/profile instead, see
-          above). This used to ALSO include Admin at this same /profile path,
-          duplicated per-role (once under the doctor block, once under the
-          admin block) with the exact same path — React Router doesn't pick
-          whichever guard would pass, it matches the FIRST declared route
-          with that path and runs only that one's guard. So an admin hitting
-          /profile was matching the doctor-guarded route, failing the
-          role==="doctor" check, and bouncing to their own dashboard instead
-          of ever reaching Profile. Fixed by giving Admin its own separate
-          path entirely (/admin/profile, above) instead of sharing this one.
-          NOTE: this still assumes ProtectedRoute renders children when
-          called with neither `role` nor `module` (i.e. "just needs to be
-          logged in"). If your ProtectedRoute.jsx requires at least a role,
-          this needs adjusting — happy to fix precisely once you share that
-          file. */}
+      
       <Route element={
         <ProtectedRoute>
           <Layout />

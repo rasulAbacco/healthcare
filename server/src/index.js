@@ -8,6 +8,7 @@ import notificationsRoutes from "./notifications/notifications.routes.js";
 import ipdRoutes from "./IPD/ipd.routes.js";
 import ipdPaymentRoutes from "./IPD/ipdPayment.routes.js";
 import adminRoutes from "./admin/admin.routes.js";
+import biometricRoutes from "./biometric/biometric.routes.js"; // NEW
 
 const app = express();
 
@@ -45,5 +46,8 @@ app.use("/api/notifications", notificationsRoutes);
 // already applies `router.use(requireAuth, requireRole("ADMIN"))` internally,
 // same pattern opd.routes.js uses for requireModule("OPD").
 app.use("/api/admin", adminRoutes);
+
+// Biometric attendance module (devices, mappings, punch ingestion,
+app.use("/api/biometric", biometricRoutes);
 
 export default app;

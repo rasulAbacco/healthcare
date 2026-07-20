@@ -135,9 +135,19 @@ export async function listEmployees(req, res) {
 // POST /api/admin/employees
 export async function createEmployee(req, res) {
   try {
-    const { fullName, designation, phone, email, joiningDate, notes } = req.body;
+    const { fullName, designation, phone, email, joiningDate, notes, salary, bankName, ifscCode, bankAccountNo } = req.body;
     if (!fullName || !designation || !joiningDate) {
       return res.status(400).json({ message: "fullName, designation, and joiningDate are required." });
+    }
+
+    // Salary/bank fields are entirely optional. salary is coerced to a
+    // number only when something was actually provided, otherwise left null.
+    const parsedSalary =
+      salary === undefined || salary === null || salary === ""
+        ? null
+        : Number(salary);
+    if (parsedSalary !== null && Number.isNaN(parsedSalary)) {
+      return res.status(400).json({ message: "salary must be a number." });
     }
 
     const employee = await prisma.employee.create({
@@ -148,6 +158,10 @@ export async function createEmployee(req, res) {
         email: email || null,
         joiningDate: new Date(joiningDate),
         notes: notes || null,
+        salary: parsedSalary,
+        bankName: bankName || null,
+        ifscCode: ifscCode || null,
+        bankAccountNo: bankAccountNo || null,
       },
     });
 
@@ -164,7 +178,19 @@ export async function updateEmployee(req, res) {
     const existing = await prisma.employee.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ message: "Employee not found." });
 
-    const { fullName, designation, phone, email, joiningDate, isActive, notes } = req.body;
+    const {
+      fullName,
+      designation,
+      phone,
+      email,
+      joiningDate,
+      isActive,
+      notes,
+      salary,
+      bankName,
+      ifscCode,
+      bankAccountNo,
+    } = req.body;
     const data = {};
     if (fullName !== undefined) data.fullName = fullName;
     if (designation !== undefined) data.designation = designation;
@@ -173,6 +199,17 @@ export async function updateEmployee(req, res) {
     if (joiningDate !== undefined) data.joiningDate = new Date(joiningDate);
     if (isActive !== undefined) data.isActive = Boolean(isActive);
     if (notes !== undefined) data.notes = notes || null;
+
+    if (salary !== undefined) {
+      const parsedSalary = salary === null || salary === "" ? null : Number(salary);
+      if (parsedSalary !== null && Number.isNaN(parsedSalary)) {
+        return res.status(400).json({ message: "salary must be a number." });
+      }
+      data.salary = parsedSalary;
+    }
+    if (bankName !== undefined) data.bankName = bankName || null;
+    if (ifscCode !== undefined) data.ifscCode = ifscCode || null;
+    if (bankAccountNo !== undefined) data.bankAccountNo = bankAccountNo || null;
 
     const employee = await prisma.employee.update({ where: { id: req.params.id }, data });
     return res.status(200).json({ employee });

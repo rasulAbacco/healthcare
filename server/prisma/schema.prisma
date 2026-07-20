@@ -19,6 +19,15 @@ model Employee {
   joiningDate  DateTime @db.Date
   isActive     Boolean  @default(true)
   notes        String?
+
+  // Salary/bank details — entirely optional. Directory records can exist
+  // with none of this filled in; nothing here is required to create or
+  // update an employee.
+  salary        Float?
+  bankName      String?
+  ifscCode      String?
+  bankAccountNo String?
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -315,4 +324,94 @@ enum StockAction {
   ADD
   REDUCE
   ADJUST
+}
+
+
+// BIOMETRIC ATTENDANCE MODULES
+
+model BiometricDevice {
+  id           String   @id @default(cuid())
+  name         String
+  deviceCode   String   @unique
+  serialNumber String   @unique
+  location     String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  mappings     BiometricMapping[]
+  logs         BiometricLog[]
+  attendances  Attendance[]
+
+  @@map("biometric_devices")
+}
+
+
+model BiometricMapping {
+  id          String   @id @default(cuid())
+  biometricId String   @unique // globally unique across all devices, per your instruction
+  deviceId    String
+  userId      String?  // plain scalar — see note above, not a Prisma relation
+  employeeId  String?  // plain scalar — see note above, not a Prisma relation
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  device      BiometricDevice @relation(fields: [deviceId], references: [id])
+  attendances Attendance[]
+
+  @@map("biometric_mappings")
+}
+
+model BiometricLog {
+  id            String    @id @default(cuid())
+  deviceId      String
+  deviceSerial  String
+  enrollmentId  String
+  punchTime     DateTime
+  punchMode     PunchMode @default(UNKNOWN)
+  rawData       Json
+  isProcessed   Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  device        BiometricDevice @relation(fields: [deviceId], references: [id])
+
+  @@index([deviceId, enrollmentId, punchTime])
+  @@map("biometric_logs")
+}
+
+model Attendance {
+  id               String           @id @default(cuid())
+  userId           String?          // plain scalar — see note above, not a Prisma relation
+  employeeId       String?          // plain scalar — see note above, not a Prisma relation
+  mappingId        String?
+  deviceId         String?
+  date             DateTime         @db.Date
+  firstPunch       DateTime?
+  lastPunch        DateTime?
+  workingMinutes   Int              @default(0)
+  lateMinutes      Int              @default(0)
+  overtimeMinutes  Int              @default(0)
+  status           AttendanceStatus @default(ABSENT)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  mapping          BiometricMapping? @relation(fields: [mappingId], references: [id])
+  device           BiometricDevice?  @relation(fields: [deviceId], references: [id])
+
+  @@unique([userId, employeeId, date])
+  @@map("attendances")
+}
+
+enum PunchMode {
+  IN
+  OUT
+  UNKNOWN
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  ON_LEAVE
 }

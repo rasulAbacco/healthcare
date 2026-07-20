@@ -9,6 +9,16 @@ const prisma = new PrismaClient();
 
 const SEED_USERS = [
   {
+    fullName: "Super Admin",
+    email: "admin@gmail.com",
+    phone: "919876543209",
+    password: "123456",
+    role: "ADMIN",
+    // Admins aren't assigned to a Module — see auth.controller.js: "ADMIN"
+    // is a login context, checked against role, not the modules array.
+    modules: [],
+  },
+  {
     fullName: "Dr. Ashwin Menon",
     email: "doctor@gmail.com",
     phone: "919876543210",
