@@ -105,7 +105,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
         </div>
         {!mini && (
           <div className="min-w-0">
-            <p className="text-slate-900 dark:text-white font-bold text-sm leading-none tracking-tight">MediCore</p>
+            <p className="text-slate-900 dark:text-white font-bold text-sm leading-none tracking-tight">VPC</p>
             <p className={`text-[11px] font-semibold mt-0.5 tracking-widest uppercase ${
               isPharmacy ? "text-emerald-600 dark:text-emerald-400" : "text-teal-600 dark:text-teal-400"
             }`}>
