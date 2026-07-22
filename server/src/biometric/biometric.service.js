@@ -2,6 +2,7 @@
 import prisma from "../lib/prisma.js";
 import {
   startOfDay,
+  parseIST,
   computeAttendanceMetrics,
   toSafeDevice,
   parseDateOnly,
@@ -228,9 +229,39 @@ export async function searchEmployees(search = "") {
 // reasonable Phase-2-later hardening step) — for now, a punch is accepted
 // only if deviceSerial matches an ACTIVE, already-registered device, which at
 // least stops punches from being attributed to devices you haven't set up.
-export async function processPunch({ deviceSerial, enrollmentId, punchTime, punchMode, raw }) {
+//
+// IMPORTANT — field names: the physical device (and the gateway that
+// forwards its payload unchanged) sends its OWN raw field names, not our
+// internal ones. These match what the working HR biometric module already
+// accepts (see hr_biometric.controller.js), so we mirror that mapping here
+// instead of requiring callers to pre-transform the payload:
+//
+//   SerialNo              -> deviceSerial
+//   EnrollmentId/ID       -> enrollmentId
+//   PunchMode             -> punchMode
+//   PunchDateAndTime      -> punchTime (parsed as IST, see parseIST)
+//
+// We still accept the old internal names (deviceSerial, enrollmentId,
+// punchTime, punchMode) as a fallback, in case anything calls this directly
+// with the already-normalized shape.
+export async function processPunch(payload = {}) {
+  const deviceSerial =
+    payload.SerialNo ?? payload.serialNo ?? payload.SerialNumber ?? payload.deviceSerial ?? null;
+
+  const enrollmentId =
+    payload.EnrollmentId ?? payload.EnrollmentID ?? payload.enrollmentId ?? null;
+
+  const punchModeRaw = payload.PunchMode ?? payload.punchMode ?? null;
+
+  // Device sends unmarked IST timestamps (e.g. "2026-06-26 09:15:00").
+  // A bare `new Date(...)` would misread that as UTC — use the same
+  // IST-safe parser the working HR module uses.
+  const punchTimeRaw = payload.PunchDateAndTime ?? payload.punchTime ?? null;
+
+  const raw = payload.raw ?? payload;
+
   if (!deviceSerial || !enrollmentId) {
-    const err = new Error("deviceSerial and enrollmentId are required.");
+    const err = new Error("deviceSerial (SerialNo) and enrollmentId (EnrollmentId) are required.");
     err.status = 400;
     throw err;
   }
@@ -242,13 +273,15 @@ export async function processPunch({ deviceSerial, enrollmentId, punchTime, punc
     throw err;
   }
 
-  const punchDateTime = punchTime ? new Date(punchTime) : new Date();
-  if (Number.isNaN(punchDateTime.getTime())) {
+  const punchDateTime = punchTimeRaw ? parseIST(punchTimeRaw) : new Date();
+  if (!punchDateTime) {
     const err = new Error("punchTime is not a valid date.");
     err.status = 400;
     throw err;
   }
-  const mode = ["IN", "OUT"].includes(punchMode) ? punchMode : "UNKNOWN";
+  const punchMode = ["IN", "OUT"].includes(punchModeRaw) ? punchModeRaw : "UNKNOWN";
+  const mode = punchMode;
+  const enrollmentIdStr = String(enrollmentId);
 
   // ---- Duplicate punch guard ----
   const windowStart = new Date(punchDateTime.getTime() - DUPLICATE_PUNCH_WINDOW_SECONDS * 1000);
@@ -256,7 +289,7 @@ export async function processPunch({ deviceSerial, enrollmentId, punchTime, punc
   const duplicate = await prisma.biometricLog.findFirst({
     where: {
       deviceId: device.id,
-      enrollmentId,
+      enrollmentId: enrollmentIdStr,
       punchTime: { gte: windowStart, lte: windowEnd },
     },
   });
@@ -266,7 +299,7 @@ export async function processPunch({ deviceSerial, enrollmentId, punchTime, punc
 
   // ---- Resolve mapping (auto-detect User vs Employee) ----
   const mapping = await prisma.biometricMapping.findFirst({
-    where: { biometricId: enrollmentId, isActive: true },
+    where: { biometricId: enrollmentIdStr, isActive: true },
   });
 
   const result = await prisma.$transaction(async (tx) => {
@@ -274,7 +307,7 @@ export async function processPunch({ deviceSerial, enrollmentId, punchTime, punc
       data: {
         deviceId: device.id,
         deviceSerial: device.serialNumber,
-        enrollmentId,
+        enrollmentId: enrollmentIdStr,
         punchTime: punchDateTime,
         punchMode: mode,
         rawData: raw || {},
