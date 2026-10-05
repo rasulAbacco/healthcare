@@ -1,3 +1,9 @@
+// Run the whole server on Indian Standard Time, whatever the host's clock is
+// set to (Render/Railway/AWS etc. default to UTC). Must be set before any
+// Date is created. Also set TZ=Asia/Kolkata in the host's environment
+// variables so it applies from process start.
+process.env.TZ = "Asia/Kolkata";
+
 import express from "express";
 import cors from "cors";
 import authRoutes from "./auth/auth.routes.js";

@@ -59,8 +59,18 @@ export const listMappings = handle(200, async (req) => {
   return { mappings };
 });
 
+export const getMapping = handle(200, async (req) => {
+  const mapping = await biometricService.getMappingById(req.params.id);
+  return { mapping };
+});
+
 export const createMapping = handle(201, async (req) => {
   const mapping = await biometricService.createMapping(req.body);
+  return { mapping };
+});
+
+export const updateMapping = handle(200, async (req) => {
+  const mapping = await biometricService.updateMapping(req.params.id, req.body);
   return { mapping };
 });
 
@@ -73,12 +83,12 @@ export const deactivateMapping = handle(200, async (req) => {
 // Search
 // ============================================================================
 export const searchUsers = handle(200, async (req) => {
-  const users = await biometricService.searchUsers(req.query.search);
+  const users = await biometricService.searchUsers(req.query.search, req.query.id);
   return { users };
 });
 
 export const searchEmployees = handle(200, async (req) => {
-  const employees = await biometricService.searchEmployees(req.query.search);
+  const employees = await biometricService.searchEmployees(req.query.search, req.query.id);
   return { employees };
 });
 
@@ -98,6 +108,30 @@ export const listLogs = handle(200, async (req) => {
 // ============================================================================
 // Attendance
 // ============================================================================
+
+// GET /attendance/overview?from=YYYY-MM-DD&to=YYYY-MM-DD
+export const attendanceOverview = handle(200, async (req) => {
+  return biometricService.attendanceOverview({ from: req.query.from, to: req.query.to });
+});
+
+// GET /attendance/person?personType=EMPLOYEE|USER&personId=&from=&to=
+export const personAttendance = handle(200, async (req) => {
+  return biometricService.personAttendance({
+    personType: req.query.personType,
+    personId: req.query.personId,
+    from: req.query.from,
+    to: req.query.to,
+  });
+});
+
+// POST /attendance/rebuild  { from, to }
+export const rebuildAttendance = handle(200, async (req) => {
+  return biometricService.rebuildAttendance({
+    from: req.body?.from ?? req.query.from,
+    to: req.body?.to ?? req.query.to,
+  });
+});
+
 export const listAttendance = handle(200, async (req) => {
   return biometricService.listAttendance({
     date: req.query.date,
@@ -119,14 +153,19 @@ export const attendanceReport = handle(200, async (req) => {
   });
 });
 
+// GET /api/biometric/punch — open it in a browser on the URL your device
+// posts to. "engine" must say ist-v3; if the page 404s or shows anything
+// else, that server is still running old punch code.
+export const punchInfo = handle(200, async () => biometricService.punchEngineInfo());
+
 // ============================================================================
-// Punch (device-facing — not behind requireRole("ADMIN"), see routes file)
+// Punch (device-facing — not behind requireRole, see routes file)
 // ============================================================================
 export const punch = handle(200, async (req) => {
   console.log("[BIOMETRIC PUNCH] Incoming payload:", JSON.stringify(req.body));
   try {
     const result = await biometricService.processPunch(req.body);
-    console.log("[BIOMETRIC PUNCH] Result:", JSON.stringify(result));
+    console.log("[BIOMETRIC PUNCH] Result:", result.status, result.recordedAs || "", result.message);
     return result;
   } catch (err) {
     console.error("[BIOMETRIC PUNCH] Failed:", err.status, err.message, "| payload was:", JSON.stringify(req.body));
