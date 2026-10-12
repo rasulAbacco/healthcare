@@ -199,16 +199,16 @@ model IPD_Patient {
 }
 
 model IPD_DailyCharge {
-  id     String    @id @default(cuid())
-  date   DateTime // "From" date of the charge period
-  toDate DateTime? // "To" date; null = still running (open-ended period)
+  id         String    @id @default(cuid())
+  date       DateTime // "From" date of the charge period
+  toDate     DateTime? // "To" date; null = still running (open-ended period)
   // Day count for this period. Both the From and To date are COUNTED, so
   // 01/01/2026 → 10/01/2026 is 10 days, not 9.
-  days   Float
+  days       Float
   // True when a user typed the day count in by hand instead of letting it
   // come from the dates. Persisted so re-opening the edit form never
   // silently overwrites a manual figure with a freshly-calculated one.
-  daysManual Boolean @default(false)
+  daysManual Boolean   @default(false)
 
   rate      Float
   amount    Float
@@ -230,11 +230,11 @@ enum IpdChargeType {
 }
 
 model IPD_AdditionalCharge {
-  id         String        @id @default(cuid())
-  patientId  String
-  label      String // e.g. "Dialysis Charges", "Doctor Consultation", "Lab Tests"
-  chargeType IpdChargeType @default(ONE_TIME)
-  rate       Float // one-time amount, or the per-day rate when chargeType = PER_DAY
+  id            String        @id @default(cuid())
+  patientId     String
+  label         String // e.g. "Dialysis Charges", "Doctor Consultation", "Lab Tests"
+  chargeType    IpdChargeType @default(ONE_TIME)
+  rate          Float // one-time amount, or the per-day rate when chargeType = PER_DAY
   // Snapshot of the day-count used to compute `amount` at save time (only
   // meaningful when chargeType = PER_DAY). Stored rather than recomputed
   // live so past invoices don't silently change if the patient's admission
@@ -243,10 +243,10 @@ model IPD_AdditionalCharge {
   paymentDate   DateTime?     @db.Date
   paymentStatus String        @default("Pending")
 
-  days       Float         @default(0)
-  amount     Float // = rate when ONE_TIME, = rate * days when PER_DAY
-  createdAt  DateTime      @default(now())
-  patient    IPD_Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  days      Float       @default(0)
+  amount    Float // = rate when ONE_TIME, = rate * days when PER_DAY
+  createdAt DateTime    @default(now())
+  patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@map("ipd_additional_charges")
 }
@@ -286,15 +286,15 @@ model IPD_Payment {
 }
 
 model IPD_Document {
-  id   String @id @default(cuid())
-  name String
-  type String
-  url  String
+  id        String      @id @default(cuid())
+  name      String
+  type      String
+  url       String
   // Object key in R2. The controller has always written and read this
   // (uploadDocument / deleteDocument / deletePatient) but it was missing
   // from the model, so every document write failed at the Prisma layer.
-  key      String?
-  fileType String?
+  key       String?
+  fileType  String?
   patientId String
   createdAt DateTime    @default(now())
   patient   IPD_Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
@@ -375,7 +375,7 @@ model Invoice {
   paid          Float   @default(0)
   balance       Float   @default(0)
   paymentMethod String?
-  payments      Json @default("[]")
+  payments      Json    @default("[]")
   notes         String?
 
   // Staff member who generated this invoice. Kept as plain fields (not a
@@ -422,7 +422,6 @@ model Invoice {
   createdAt DateTime @default(now())
 
   @@index([patientType, invoiceDate])
-
   // NOTE: the "one invoice per OPD/IPD patient" rule is enforced in the
   // controller, not by a plain @@unique, because PHARMACY invoices are
   // deliberately allowed to repeat for the same patientId (a registered
@@ -651,7 +650,7 @@ model BiometricDevice {
 
 model BiometricMapping {
   id          String   @id @default(cuid())
-  biometricId String   @unique // globally unique across all devices, per your instruction
+  biometricId String // NOT unique: an inactive mapping keeps its ID so the ID can be reused. Only ONE ACTIVE mapping per ID (partial unique index in migration.sql + service checks)
   deviceId    String
   userId      String? // plain scalar — see note above, not a Prisma relation
   employeeId  String? // plain scalar — see note above, not a Prisma relation
@@ -664,6 +663,7 @@ model BiometricMapping {
   shift       Shift?          @relation(fields: [shiftId], references: [id])
   attendances Attendance[]
 
+  @@index([biometricId])
   @@map("biometric_mappings")
 }
 
@@ -672,6 +672,7 @@ model BiometricLog {
   deviceId     String
   deviceSerial String
   enrollmentId String
+  mappingId    String? // mapping that was ACTIVE for this enrollment ID when the punch arrived (plain scalar)
   punchTime    DateTime
   punchMode    PunchMode @default(UNKNOWN)
   rawData      Json

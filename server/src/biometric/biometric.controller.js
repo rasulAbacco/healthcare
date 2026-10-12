@@ -3,6 +3,8 @@ import * as biometricService from "./biometric.service.js";
 
 // Small shared handler so every route follows the same
 // try/respond/catch-with-status pattern used in admin.controller.js.
+// A 409 from the mapping rules also carries `conflicts` (the other people
+// who currently hold the same active biometric ID).
 function handle(status, fn) {
   return async (req, res) => {
     try {
@@ -11,7 +13,10 @@ function handle(status, fn) {
     } catch (err) {
       const code = err.status || 500;
       if (code === 500) console.error("Biometric module error:", err);
-      return res.status(code).json({ message: err.message || "Something went wrong." });
+      return res.status(code).json({
+        message: err.message || "Something went wrong.",
+        ...(err.conflicts ? { conflicts: err.conflicts } : {}),
+      });
     }
   };
 }
@@ -28,7 +33,9 @@ export const getDashboard = handle(200, async () => {
 // Devices
 // ============================================================================
 export const listDevices = handle(200, async (req) => {
-  const devices = await biometricService.listDevices({ search: req.query.search });
+  const devices = await biometricService.listDevices({
+    search: req.query.search,
+  });
   return { devices };
 });
 
@@ -64,14 +71,26 @@ export const getMapping = handle(200, async (req) => {
   return { mapping };
 });
 
+// GET /mappings/conflicts?biometricId=&excludeId=
+export const mappingConflicts = handle(200, async (req) => {
+  const conflicts = await biometricService.getMappingConflicts({
+    biometricId: req.query.biometricId,
+    excludeId: req.query.excludeId,
+  });
+  return { conflicts };
+});
+
 export const createMapping = handle(201, async (req) => {
-  const mapping = await biometricService.createMapping(req.body);
-  return { mapping };
+  return biometricService.createMapping(req.body || {}); // { mapping, deactivated }
 });
 
 export const updateMapping = handle(200, async (req) => {
-  const mapping = await biometricService.updateMapping(req.params.id, req.body);
-  return { mapping };
+  return biometricService.updateMapping(req.params.id, req.body || {}); // { mapping, deactivated }
+});
+
+// PATCH /mappings/:id/status  { isActive, deactivateConflicts }
+export const setMappingStatus = handle(200, async (req) => {
+  return biometricService.setMappingStatus(req.params.id, req.body || {}); // { mapping, deactivated }
 });
 
 export const deactivateMapping = handle(200, async (req) => {
@@ -83,12 +102,18 @@ export const deactivateMapping = handle(200, async (req) => {
 // Search
 // ============================================================================
 export const searchUsers = handle(200, async (req) => {
-  const users = await biometricService.searchUsers(req.query.search, req.query.id);
+  const users = await biometricService.searchUsers(
+    req.query.search,
+    req.query.id,
+  );
   return { users };
 });
 
 export const searchEmployees = handle(200, async (req) => {
-  const employees = await biometricService.searchEmployees(req.query.search, req.query.id);
+  const employees = await biometricService.searchEmployees(
+    req.query.search,
+    req.query.id,
+  );
   return { employees };
 });
 
@@ -111,7 +136,10 @@ export const listLogs = handle(200, async (req) => {
 
 // GET /attendance/overview?from=YYYY-MM-DD&to=YYYY-MM-DD
 export const attendanceOverview = handle(200, async (req) => {
-  return biometricService.attendanceOverview({ from: req.query.from, to: req.query.to });
+  return biometricService.attendanceOverview({
+    from: req.query.from,
+    to: req.query.to,
+  });
 });
 
 // GET /attendance/person?personType=EMPLOYEE|USER&personId=&from=&to=
@@ -154,9 +182,11 @@ export const attendanceReport = handle(200, async (req) => {
 });
 
 // GET /api/biometric/punch — open it in a browser on the URL your device
-// posts to. "engine" must say ist-v3; if the page 404s or shows anything
+// posts to. "engine" must say ist-v4; if the page 404s or shows anything
 // else, that server is still running old punch code.
-export const punchInfo = handle(200, async () => biometricService.punchEngineInfo());
+export const punchInfo = handle(200, async () =>
+  biometricService.punchEngineInfo(),
+);
 
 // ============================================================================
 // Punch (device-facing — not behind requireRole, see routes file)
@@ -165,10 +195,21 @@ export const punch = handle(200, async (req) => {
   console.log("[BIOMETRIC PUNCH] Incoming payload:", JSON.stringify(req.body));
   try {
     const result = await biometricService.processPunch(req.body);
-    console.log("[BIOMETRIC PUNCH] Result:", result.status, result.recordedAs || "", result.message);
+    console.log(
+      "[BIOMETRIC PUNCH] Result:",
+      result.status,
+      result.recordedAs || "",
+      result.message,
+    );
     return result;
   } catch (err) {
-    console.error("[BIOMETRIC PUNCH] Failed:", err.status, err.message, "| payload was:", JSON.stringify(req.body));
+    console.error(
+      "[BIOMETRIC PUNCH] Failed:",
+      err.status,
+      err.message,
+      "| payload was:",
+      JSON.stringify(req.body),
+    );
     throw err;
   }
 });

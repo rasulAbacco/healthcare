@@ -6,6 +6,9 @@ import * as shift from "./shift.controller.js";
 
 const router = Router();
 
+// NOTE: the client api helper (lib/api.js) has get/post/put but no patch,
+// so every "patch" route below also answers PUT.
+
 // ── Device punch — device-facing, NOT behind JWT auth. The device
 // authenticates itself by sending its own registered, active serialNumber;
 // biometricService.processPunch() rejects anything else. Registered BEFORE
@@ -21,8 +24,15 @@ router.get("/shifts", requireRole("ADMIN", "MANAGER"), shift.listShifts);
 router.get("/shifts/:id", requireRole("ADMIN", "MANAGER"), shift.getShift);
 router.post("/shifts", requireRole("ADMIN", "MANAGER"), shift.createShift);
 router.put("/shifts/:id", requireRole("ADMIN", "MANAGER"), shift.updateShift);
-router.patch("/shifts/:id/toggle", requireRole("ADMIN", "MANAGER"), shift.toggleShift);
-router.delete("/shifts/:id", requireRole("ADMIN", "MANAGER"), shift.deleteShift);
+router
+  .route("/shifts/:id/toggle")
+  .patch(requireRole("ADMIN", "MANAGER"), shift.toggleShift)
+  .put(requireRole("ADMIN", "MANAGER"), shift.toggleShift);
+router.delete(
+  "/shifts/:id",
+  requireRole("ADMIN", "MANAGER"),
+  shift.deleteShift,
+);
 
 // Everything else (Dashboard, Devices, Mappings, Search, Logs, Attendance)
 // is open to ADMIN and MANAGER.
@@ -35,15 +45,29 @@ router.get("/dashboard", biometric.getDashboard);
 router.get("/devices", biometric.listDevices);
 router.post("/devices", biometric.createDevice);
 router.put("/devices/:id", biometric.updateDevice);
-router.patch("/devices/:id/toggle", biometric.toggleDevice);
+router
+  .route("/devices/:id/toggle")
+  .patch(biometric.toggleDevice)
+  .put(biometric.toggleDevice);
 
-// Mappings
+// Mappings — "/mappings/conflicts" must stay ABOVE "/mappings/:id".
 router.get("/mappings", biometric.listMappings);
+router.get("/mappings/conflicts", biometric.mappingConflicts);
 router.post("/mappings", biometric.createMapping);
 router.get("/mappings/:id", biometric.getMapping);
 router.put("/mappings/:id", biometric.updateMapping);
-router.patch("/mappings/:id/deactivate", biometric.deactivateMapping);
-router.patch("/mappings/:id/shift", shift.assignMappingShift);
+router
+  .route("/mappings/:id/status")
+  .patch(biometric.setMappingStatus)
+  .put(biometric.setMappingStatus);
+router
+  .route("/mappings/:id/deactivate")
+  .patch(biometric.deactivateMapping)
+  .put(biometric.deactivateMapping);
+router
+  .route("/mappings/:id/shift")
+  .patch(shift.assignMappingShift)
+  .put(shift.assignMappingShift);
 
 // Search
 router.get("/users", biometric.searchUsers);

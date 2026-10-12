@@ -4,7 +4,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import { api } from "../../../lib/api";
 import { PageHeader, SectionCard, SearchBar } from "../../../components/UI";
-import { Fingerprint, Check, X, Loader2 } from "lucide-react";
+import { Fingerprint, Check, Loader2 } from "lucide-react";
+import { useMappingConflictCheck } from "./MappingConflictDialog";
 
 function Field({
   label,
@@ -42,8 +43,11 @@ export default function BiometricStaffEmployee() {
   // role so a Manager isn't sent to the Admin-only /admin/biometric route,
   // which would bounce them straight to /login.
   const basePath =
-    user?.role === "manager" ? "/manager/biometric" : "/admin/biometric";
+    String(user?.role || "").toLowerCase() === "manager"
+      ? "/manager/biometric"
+      : "/admin/biometric";
   const [searchParams] = useSearchParams();
+  const { checkConflicts, conflictDialog } = useMappingConflictCheck();
 
   const mode = searchParams.get("mode") === "edit" ? "edit" : "add";
   const mappingId = searchParams.get("id");
@@ -63,6 +67,8 @@ export default function BiometricStaffEmployee() {
 
   const [deviceId, setDeviceId] = useState("");
   const [biometricId, setBiometricId] = useState("");
+  const [originalBiometricId, setOriginalBiometricId] = useState("");
+  const [originalActive, setOriginalActive] = useState(true);
   const [isActive, setIsActive] = useState(true);
 
   const [loading, setLoading] = useState(isEdit || Boolean(prefillPersonId));
@@ -91,7 +97,9 @@ export default function BiometricStaffEmployee() {
         setSelectedPerson(mapping.userId ? mapping.user : mapping.employee);
         setDeviceId(mapping.deviceId);
         setBiometricId(mapping.biometricId);
+        setOriginalBiometricId(mapping.biometricId);
         setIsActive(mapping.isActive);
+        setOriginalActive(mapping.isActive);
       } catch (err) {
         setError(err.message || "Could not load this mapping.");
       } finally {
@@ -143,25 +151,39 @@ export default function BiometricStaffEmployee() {
   const handleSave = async (e) => {
     e.preventDefault();
     setError("");
+    const bio = biometricId.trim();
     if (!selectedPerson)
       return setError(
         `Please select a ${isUser ? "staff member" : "employee"} to map.`,
       );
     if (!deviceId) return setError("Please select a device.");
-    if (!biometricId) return setError("Biometric ID is required.");
+    if (!bio) return setError("Biometric ID is required.");
 
     setSaving(true);
     try {
+      // Inactive → no checks. Active → make sure nobody else holds this ID.
+      let deactivateConflicts = false;
+      const needsCheck =
+        isActive && (!isEdit || !originalActive || bio !== originalBiometricId);
+      if (needsCheck) {
+        const r = await checkConflicts(bio, isEdit ? mappingId : null);
+        if (!r.proceed) return;
+        deactivateConflicts = r.deactivateConflicts;
+      }
+
       if (isEdit) {
         await api.put(`/biometric/mappings/${mappingId}`, {
           deviceId,
-          biometricId,
+          biometricId: bio,
           isActive,
+          deactivateConflicts,
         });
       } else {
         await api.post("/biometric/mappings", {
-          biometricId,
+          biometricId: bio,
           deviceId,
+          isActive,
+          deactivateConflicts,
           ...(isUser
             ? { userId: selectedPerson.id }
             : { employeeId: selectedPerson.id }),
@@ -176,7 +198,7 @@ export default function BiometricStaffEmployee() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 font-sans text-slate-900 bg-[#f4f5f7] dark:bg-slate-950 p-2 sm:p-4 rounded-3xl">
+    <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6 font-sans text-slate-900 bg-[#f4f5f7] dark:bg-slate-950 p-2 sm:p-4 rounded-3xl">
       <PageHeader
         title={`${isEdit ? "Edit" : "Add"} ${isUser ? "Staff" : "Employee"} Biometric Mapping`}
         subtitle="Map hardware biometric IDs to staff accounts or workforce directory records"
@@ -203,7 +225,7 @@ export default function BiometricStaffEmployee() {
               <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
                 Mapping Type
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {["user", "employee"].map((t) => (
                   <button
                     key={t}
@@ -214,16 +236,23 @@ export default function BiometricStaffEmployee() {
                       setSelectedPerson(null);
                       setPersonResults([]);
                     }}
-                    className={`px-4 py-2 rounded-full text-xs font-extrabold border transition-all ${
+                    className={`px-4 py-2 rounded-full text-xs font-extrabold border transition-all disabled:cursor-not-allowed ${
                       type === t
                         ? "bg-[#0f4a29] text-white border-[#0f4a29]"
                         : "bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700"
                     }`}
                   >
-                    {t === "user" ? "Staff User" : "Workforce Employee"}
+                    {t === "user"
+                      ? "Staff (login account)"
+                      : "Workforce Employee"}
                   </button>
                 ))}
               </div>
+              <p className="text-[10px] text-slate-400 font-medium mt-1.5">
+                {isUser
+                  ? "Staff = people who log in to the app (Admin, Doctor, Receptionist, Pharmacy, Manager)."
+                  : "Employee = workforce directory records without a login (nurses, ward boys, housekeeping)."}
+              </p>
             </div>
 
             {/* Select Person */}
@@ -233,12 +262,12 @@ export default function BiometricStaffEmployee() {
               </label>
 
               {selectedPerson ? (
-                <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4">
-                  <div>
-                    <p className="text-xs font-extrabold text-slate-900 dark:text-white">
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
                       {selectedPerson.fullName}
                     </p>
-                    <p className="text-[10px] text-slate-400 font-medium">
+                    <p className="text-[10px] text-slate-400 font-medium truncate">
                       {isUser
                         ? `${selectedPerson.role || ""} ${selectedPerson.email ? "· " + selectedPerson.email : ""}`
                         : selectedPerson.designation}
@@ -256,12 +285,14 @@ export default function BiometricStaffEmployee() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="flex gap-2">
-                    <SearchBar
-                      value={personSearch}
-                      onChange={setPersonSearch}
-                      placeholder={`Search ${isUser ? "staff" : "employee"}...`}
-                    />
+                  <div className="flex flex-wrap gap-2">
+                    <div className="flex-1 min-w-[180px]">
+                      <SearchBar
+                        value={personSearch}
+                        onChange={setPersonSearch}
+                        placeholder={`Search ${isUser ? "staff" : "employee"}...`}
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={runSearch}
@@ -301,7 +332,7 @@ export default function BiometricStaffEmployee() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Assigned Device
+                  Assigned Device<span className="text-rose-500 ml-0.5">*</span>
                 </label>
                 <select
                   value={deviceId}
@@ -309,11 +340,14 @@ export default function BiometricStaffEmployee() {
                   className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 dark:text-white focus:outline-none focus:border-[#0f4a29]"
                 >
                   <option value="">Select hardware device</option>
-                  {devices.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} ({d.deviceCode})
-                    </option>
-                  ))}
+                  {devices
+                    .filter((d) => d.isActive || d.id === deviceId)
+                    .map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} ({d.deviceCode})
+                        {d.isActive ? "" : " — disabled"}
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -342,7 +376,9 @@ export default function BiometricStaffEmployee() {
                     onClick={() => setIsActive(opt.v)}
                     className={`px-4 py-2 rounded-full text-xs font-extrabold border transition-all ${
                       isActive === opt.v
-                        ? "bg-[#0f4a29] text-white border-[#0f4a29]"
+                        ? opt.v
+                          ? "bg-[#0f4a29] text-white border-[#0f4a29]"
+                          : "bg-rose-500 text-white border-rose-500"
                         : "bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700"
                     }`}
                   >
@@ -350,10 +386,15 @@ export default function BiometricStaffEmployee() {
                   </button>
                 ))}
               </div>
+              <p className="text-[10px] text-slate-400 font-medium mt-1.5">
+                One biometric ID can be Active for only one person. If someone
+                else already has this ID active, you'll be asked to make them
+                Inactive.
+              </p>
             </div>
 
             {/* Form Actions */}
-            <div className="flex gap-2 justify-end pt-3">
+            <div className="flex flex-col-reverse sm:flex-row gap-2 justify-end pt-3">
               <button
                 type="button"
                 onClick={backToList}
@@ -364,7 +405,7 @@ export default function BiometricStaffEmployee() {
               <button
                 type="submit"
                 disabled={saving}
-                className="bg-[#0f4a29] hover:bg-[#165a34] text-white text-xs font-extrabold px-6 py-2.5 rounded-full shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+                className="bg-[#0f4a29] hover:bg-[#165a34] text-white text-xs font-extrabold px-6 py-2.5 rounded-full shadow-xs disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
                 <Check className="w-4 h-4" />{" "}
                 {saving ? "Saving..." : "Save Mapping"}
@@ -373,6 +414,8 @@ export default function BiometricStaffEmployee() {
           </form>
         </SectionCard>
       )}
+
+      {conflictDialog}
     </div>
   );
 }
