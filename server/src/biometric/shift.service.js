@@ -11,6 +11,8 @@ import {
   computeShiftWorkingMinutes,
   shiftSpanMinutes,
   pagination,
+  DEFAULT_LATE_EXCUSE_MINUTES,
+  DEFAULT_DAY_WINDOW_MINUTES,
 } from "./biometric.helper.js";
 
 const VALID_TYPES = ["DAY", "NIGHT", "GENERAL"];
@@ -30,49 +32,112 @@ function normalizeShiftInput(body, { requireCore }) {
   const data = {};
 
   if (requireCore || name !== undefined) {
-    if (!name || !String(name).trim()) return { error: "Shift name is required." };
+    if (!name || !String(name).trim())
+      return { error: "Shift name is required." };
     data.name = String(name).trim();
   }
   if (requireCore || code !== undefined) {
-    if (!code || !String(code).trim()) return { error: "Shift code is required." };
+    if (!code || !String(code).trim())
+      return { error: "Shift code is required." };
     data.code = String(code).trim().toUpperCase();
   }
   if (requireCore || type !== undefined) {
     const t = type || "GENERAL";
-    if (!VALID_TYPES.includes(t)) return { error: `type must be one of ${VALID_TYPES.join(", ")}` };
+    if (!VALID_TYPES.includes(t))
+      return { error: `type must be one of ${VALID_TYPES.join(", ")}` };
     data.type = t;
   }
 
   let startMin, endMin;
   if (requireCore || startTime !== undefined) {
     startMin = timeStringToMinutes(startTime);
-    if (startMin === null) return { error: "Shift Start Time must be a valid HH:mm value." };
+    if (startMin === null)
+      return { error: "Shift Start Time must be a valid HH:mm value." };
     data.startTime = startTime;
   }
   if (requireCore || endTime !== undefined) {
     endMin = timeStringToMinutes(endTime);
-    if (endMin === null) return { error: "Shift End Time must be a valid HH:mm value." };
+    if (endMin === null)
+      return { error: "Shift End Time must be a valid HH:mm value." };
     data.endTime = endTime;
   }
-  if (data.startTime !== undefined && data.endTime !== undefined && startMin === endMin) {
-    return { error: "Start Time and End Time can't be the same — that's a zero-length shift." };
+  if (
+    data.startTime !== undefined &&
+    data.endTime !== undefined &&
+    startMin === endMin
+  ) {
+    return {
+      error:
+        "Start Time and End Time can't be the same — that's a zero-length shift.",
+    };
   }
 
-  const graceBeforeMinutes = toNonNegativeInt(body.graceBeforeMinutes, requireCore ? 0 : undefined);
-  if (graceBeforeMinutes === null) return { error: "Grace Time Before Shift must be a non-negative number of minutes." };
-  if (graceBeforeMinutes !== undefined) data.graceBeforeMinutes = graceBeforeMinutes;
+  const graceBeforeMinutes = toNonNegativeInt(
+    body.graceBeforeMinutes,
+    requireCore ? 0 : undefined,
+  );
+  if (graceBeforeMinutes === null)
+    return {
+      error:
+        "Grace Time Before Shift must be a non-negative number of minutes.",
+    };
+  if (graceBeforeMinutes !== undefined)
+    data.graceBeforeMinutes = graceBeforeMinutes;
 
-  const graceAfterMinutes = toNonNegativeInt(body.graceAfterMinutes, requireCore ? 0 : undefined);
-  if (graceAfterMinutes === null) return { error: "Grace Time After Shift must be a non-negative number of minutes." };
-  if (graceAfterMinutes !== undefined) data.graceAfterMinutes = graceAfterMinutes;
+  const graceAfterMinutes = toNonNegativeInt(
+    body.graceAfterMinutes,
+    requireCore ? 0 : undefined,
+  );
+  if (graceAfterMinutes === null)
+    return {
+      error: "Grace Time After Shift must be a non-negative number of minutes.",
+    };
+  if (graceAfterMinutes !== undefined)
+    data.graceAfterMinutes = graceAfterMinutes;
 
-  const breakMinutes = toNonNegativeInt(body.breakMinutes, requireCore ? 0 : undefined);
-  if (breakMinutes === null) return { error: "Break Duration must be a non-negative number of minutes." };
+  const breakMinutes = toNonNegativeInt(
+    body.breakMinutes,
+    requireCore ? 0 : undefined,
+  );
+  if (breakMinutes === null)
+    return {
+      error: "Break Duration must be a non-negative number of minutes.",
+    };
   if (breakMinutes !== undefined) data.breakMinutes = breakMinutes;
 
-  const overtimeAfterMinutes = toNonNegativeInt(body.overtimeAfterMinutes, requireCore ? 0 : undefined);
-  if (overtimeAfterMinutes === null) return { error: "Overtime Starts After must be a non-negative number of minutes." };
-  if (overtimeAfterMinutes !== undefined) data.overtimeAfterMinutes = overtimeAfterMinutes;
+  const overtimeAfterMinutes = toNonNegativeInt(
+    body.overtimeAfterMinutes,
+    requireCore ? 0 : undefined,
+  );
+  if (overtimeAfterMinutes === null)
+    return {
+      error: "Overtime Starts After must be a non-negative number of minutes.",
+    };
+  if (overtimeAfterMinutes !== undefined)
+    data.overtimeAfterMinutes = overtimeAfterMinutes;
+
+  // Full day = shift hours − lateExcuseMinutes (late login + early logout).
+  const lateExcuseMinutes = toNonNegativeInt(
+    body.lateExcuseMinutes,
+    requireCore ? DEFAULT_LATE_EXCUSE_MINUTES : undefined,
+  );
+  if (lateExcuseMinutes === null)
+    return {
+      error: "Late/early excuse must be a non-negative number of minutes.",
+    };
+  if (lateExcuseMinutes !== undefined)
+    data.lateExcuseMinutes = lateExcuseMinutes;
+
+  // Half-day / OT lines get this many minutes of leeway.
+  const dayWindowMinutes = toNonNegativeInt(
+    body.dayWindowMinutes,
+    requireCore ? DEFAULT_DAY_WINDOW_MINUTES : undefined,
+  );
+  if (dayWindowMinutes === null)
+    return {
+      error: "Half-day / OT window must be a non-negative number of minutes.",
+    };
+  if (dayWindowMinutes !== undefined) data.dayWindowMinutes = dayWindowMinutes;
 
   if (description !== undefined) data.description = description || null;
   if (isActive !== undefined) data.isActive = Boolean(isActive);
@@ -88,10 +153,35 @@ function withTotalWorkingMinutes(merged) {
   if (span <= (Number(merged.breakMinutes) || 0)) {
     return { error: "Break Duration can't be longer than the shift itself." };
   }
-  return { totalWorkingMinutes: computeShiftWorkingMinutes(merged) };
+  const total = computeShiftWorkingMinutes(merged);
+  const half = Math.round(total / 2);
+  if (
+    merged.lateExcuseMinutes !== undefined &&
+    Number(merged.lateExcuseMinutes) >= total - half
+  ) {
+    return {
+      error:
+        "The late/early excuse must be less than half the shift's working hours.",
+    };
+  }
+  if (
+    merged.dayWindowMinutes !== undefined &&
+    Number(merged.dayWindowMinutes) >= half
+  ) {
+    return {
+      error:
+        "The half-day / OT window must be less than half the shift's working hours.",
+    };
+  }
+  return { totalWorkingMinutes: total };
 }
 
-export async function listShifts({ search = "", status, page: pageQ, limit: limitQ } = {}) {
+export async function listShifts({
+  search = "",
+  status,
+  page: pageQ,
+  limit: limitQ,
+} = {}) {
   const where = {};
   if (search) {
     where.OR = [
@@ -121,16 +211,25 @@ export async function listShifts({ search = "", status, page: pageQ, limit: limi
 // Summary cards — computed over ALL shifts, independent of the current
 // search/filter/pagination on the table below it.
 export async function getShiftSummary() {
-  const [totalShifts, activeShifts, employeesAssigned, activeShiftRows] = await Promise.all([
-    prisma.shift.count(),
-    prisma.shift.count({ where: { isActive: true } }),
-    prisma.biometricMapping.count({ where: { isActive: true, shiftId: { not: null } } }),
-    prisma.shift.findMany({ where: { isActive: true }, select: { totalWorkingMinutes: true } }),
-  ]);
+  const [totalShifts, activeShifts, employeesAssigned, activeShiftRows] =
+    await Promise.all([
+      prisma.shift.count(),
+      prisma.shift.count({ where: { isActive: true } }),
+      prisma.biometricMapping.count({
+        where: { isActive: true, shiftId: { not: null } },
+      }),
+      prisma.shift.findMany({
+        where: { isActive: true },
+        select: { totalWorkingMinutes: true },
+      }),
+    ]);
 
   const avgWorkingHours = activeShiftRows.length
     ? Math.round(
-        (activeShiftRows.reduce((sum, s) => sum + s.totalWorkingMinutes, 0) / activeShiftRows.length / 60) * 10
+        (activeShiftRows.reduce((sum, s) => sum + s.totalWorkingMinutes, 0) /
+          activeShiftRows.length /
+          60) *
+          10,
       ) / 10
     : 0;
 
@@ -201,7 +300,10 @@ export async function updateShift(id, body) {
   }
 
   try {
-    return await prisma.shift.update({ where: { id }, data: { ...data, ...totals } });
+    return await prisma.shift.update({
+      where: { id },
+      data: { ...data, ...totals },
+    });
   } catch (err) {
     if (err.code === "P2002") {
       const dup = new Error("A shift with that code already exists.");
@@ -219,7 +321,10 @@ export async function toggleShift(id) {
     err.status = 404;
     throw err;
   }
-  return prisma.shift.update({ where: { id }, data: { isActive: !existing.isActive } });
+  return prisma.shift.update({
+    where: { id },
+    data: { isActive: !existing.isActive },
+  });
 }
 
 // Hard delete is only safe when nothing currently points at this shift —
@@ -236,7 +341,7 @@ export async function deleteShift(id) {
   }
   if (existing._count.mappings > 0 || existing._count.attendances > 0) {
     const err = new Error(
-      "This shift is assigned to employees or has attendance history. Deactivate it instead of deleting it."
+      "This shift is assigned to employees or has attendance history. Deactivate it instead of deleting it.",
     );
     err.status = 400;
     throw err;
@@ -250,7 +355,9 @@ export async function deleteShift(id) {
 // shiftId may be null/omitted to unassign — that just puts the mapping back
 // on the implicit DEFAULT_SHIFT fallback (see biometric.helper.js).
 export async function assignShiftToMapping(mappingId, shiftId) {
-  const mapping = await prisma.biometricMapping.findUnique({ where: { id: mappingId } });
+  const mapping = await prisma.biometricMapping.findUnique({
+    where: { id: mappingId },
+  });
   if (!mapping) {
     const err = new Error("Mapping not found.");
     err.status = 404;
@@ -265,7 +372,9 @@ export async function assignShiftToMapping(mappingId, shiftId) {
       throw err;
     }
     if (!shift.isActive) {
-      const err = new Error("Can't assign an inactive shift. Activate it first.");
+      const err = new Error(
+        "Can't assign an inactive shift. Activate it first.",
+      );
       err.status = 400;
       throw err;
     }

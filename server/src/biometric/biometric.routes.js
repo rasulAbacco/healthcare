@@ -76,6 +76,10 @@ router.get("/employees", biometric.searchEmployees);
 // Logs
 router.get("/logs", biometric.listLogs);
 
+// Week-off settings (how many week-offs per month for each staff group)
+router.get("/settings/week-offs", biometric.getWeekOffSettings);
+router.put("/settings/week-offs", biometric.saveWeekOffSettings);
+
 // Attendance
 router.get("/attendance", biometric.listAttendance);
 router.get("/attendance/report", biometric.attendanceReport);

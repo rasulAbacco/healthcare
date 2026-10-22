@@ -36,6 +36,9 @@ import {
   CalendarDays,
   Info,
   Check,
+  CalendarOff,
+  Trash2,
+  Save,
 } from "lucide-react";
 import { useMappingConflictCheck } from "./MappingConflictDialog";
 
@@ -72,6 +75,12 @@ const TABS = [
     short: "Attendance",
     icon: FileBarChart,
   },
+  {
+    key: "weekOffs",
+    label: "Week-off Rules",
+    short: "Week-offs",
+    icon: CalendarOff,
+  },
 ];
 const isTabKey = (k) => TABS.some((t) => t.key === k);
 
@@ -100,12 +109,12 @@ export default function BiometricManagement() {
         subtitle="Manage hardware devices, shift schedules, mappings, and attendance"
       />
 
-      {/* Responsive tab bar: 3×2 grid on phones, one row from sm, full labels from lg */}
+      {/* Responsive tab bar: 4+3 grid on phones, one row from sm, full labels from lg */}
       <nav
         aria-label="Biometric sections"
         className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl sm:rounded-full p-1.5 shadow-2xs"
       >
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+        <div className="grid grid-cols-4 sm:grid-cols-7 gap-1">
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = tab === t.key;
@@ -140,6 +149,7 @@ export default function BiometricManagement() {
         <MappingTab key="employee" kind="employee" />
       )}
       {tab === "report" && <AttendanceTab />}
+      {tab === "weekOffs" && <WeekOffSettingsTab />}
     </div>
   );
 }
@@ -656,6 +666,8 @@ const emptyShiftForm = {
   graceAfterMinutes: 0,
   breakMinutes: 0,
   overtimeAfterMinutes: 0,
+  lateExcuseMinutes: 60,
+  dayWindowMinutes: 20,
   isActive: true,
   description: "",
 };
@@ -758,11 +770,25 @@ function ShiftForm({ form, setForm }) {
           onChange={(v) => setForm((f) => ({ ...f, breakMinutes: v }))}
         />
         <Field
-          label="Overtime After (mins)"
+          label="Late login + early logout excuse (mins)"
           type="number"
-          value={form.overtimeAfterMinutes}
-          onChange={(v) => setForm((f) => ({ ...f, overtimeAfterMinutes: v }))}
+          value={form.lateExcuseMinutes}
+          onChange={(v) => setForm((f) => ({ ...f, lateExcuseMinutes: v }))}
         />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field
+          label="Half-day / OT window (mins)"
+          type="number"
+          value={form.dayWindowMinutes}
+          onChange={(v) => setForm((f) => ({ ...f, dayWindowMinutes: v }))}
+        />
+        <p className="text-[10px] text-slate-400 font-medium sm:pt-5">
+          The excuse is the total late login + early logout still counted as a
+          full day. The window is how much less than half-day / full-day OT is
+          still accepted.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -806,11 +832,55 @@ function ShiftForm({ form, setForm }) {
             ? "Set valid start & end time"
             : formatMinutesHrs(preview)}
         </div>
-        <p className="text-[10px] text-slate-400 mt-1 font-medium">
-          A day counts as a full day only when the employee works at least this
-          long (minus the grace-after minutes). Less is marked Half Day.
-        </p>
+        <ShiftRulesPreview form={form} working={preview} />
       </div>
+    </div>
+  );
+}
+
+// Live "what does this mean" box under the shift form.
+function ShiftRulesPreview({ form, working }) {
+  if (working === null || !working) return null;
+  const excuse = Math.max(0, Number(form.lateExcuseMinutes) || 0);
+  const win = Math.max(0, Number(form.dayWindowMinutes) || 0);
+  const half = Math.round(working / 2);
+  const rows = [
+    [
+      "Full day (Present)",
+      `worked ≥ ${formatMinutesHrs(Math.max(0, working - excuse))}`,
+    ],
+    [
+      "Half day",
+      `punched in & out, less than ${formatMinutesHrs(Math.max(0, working - excuse))}`,
+    ],
+    [
+      "Half-day OT",
+      `extra ≥ ${formatMinutesHrs(Math.max(0, half - win))} beyond ${formatMinutesHrs(working)}`,
+    ],
+    [
+      "Full-day OT",
+      `extra ≥ ${formatMinutesHrs(Math.max(0, working - win))} beyond ${formatMinutesHrs(working)}`,
+    ],
+    [
+      "Smaller extra time",
+      "not OT — covers late login / short hours in the month",
+    ],
+  ];
+  return (
+    <div className="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+      {rows.map(([k, v]) => (
+        <div
+          key={k}
+          className="flex flex-wrap justify-between gap-2 px-3 py-1.5 text-[11px]"
+        >
+          <span className="font-extrabold text-slate-700 dark:text-slate-200">
+            {k}
+          </span>
+          <span className="font-medium text-slate-500 dark:text-slate-400">
+            {v}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -872,6 +942,8 @@ function ShiftsTab() {
       graceAfterMinutes: s.graceAfterMinutes,
       breakMinutes: s.breakMinutes,
       overtimeAfterMinutes: s.overtimeAfterMinutes,
+      lateExcuseMinutes: s.lateExcuseMinutes ?? 60,
+      dayWindowMinutes: s.dayWindowMinutes ?? 20,
       isActive: s.isActive,
       description: s.description || "",
     });
@@ -1868,14 +1940,15 @@ const ATT_STATUS_META = {
   WEEK_OFF: {
     label: "Week Off",
     short: "WO",
-    cls: "bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700",
-    cell: "bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700",
+    cls: "bg-sky-50 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-500/20",
+    cell: "bg-sky-50 dark:bg-sky-500/10 border-sky-200 dark:border-sky-500/20",
   },
-  HOLIDAY: {
-    label: "Holiday",
-    short: "H",
-    cls: "bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-500/20",
-    cell: "bg-violet-50 dark:bg-violet-500/10 border-violet-200 dark:border-violet-500/20",
+  // Day off beyond the monthly week-off allowance.
+  LEAVE: {
+    label: "Leave",
+    short: "L",
+    cls: "bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20",
+    cell: "bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/20",
   },
   FUTURE: {
     label: "Upcoming",
@@ -1905,10 +1978,10 @@ const STATUS_FILTERS = [
   { v: "ALL", label: "All statuses" },
   { v: "PRESENT", label: "Present" },
   { v: "HALF_DAY", label: "Half Day" },
-  { v: "ABSENT", label: "Absent" },
+  { v: "WEEK_OFF", label: "Week Off" },
+  { v: "LEAVE", label: "Leave (over week-offs)" },
   { v: "MISSING_OUT", label: "No punch-out" },
   { v: "LATE", label: "Late arrivals" },
-  { v: "ON_LEAVE", label: "On Leave" },
   { v: "NOT_YET", label: "No punch yet" },
 ];
 
@@ -2063,6 +2136,15 @@ function TypeChip({ personType }) {
   );
 }
 
+function OtBadge({ otDays }) {
+  if (!otDays) return null;
+  return (
+    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-500/20">
+      {otDays === 1 ? "Full-day OT" : "Half-day OT"}
+    </span>
+  );
+}
+
 function DayStatusBadge({ day, todayKey }) {
   const meta = ATT_STATUS_META[day.status] || ATT_STATUS_META.ABSENT;
   const inProgress = day.missingPunchOut && day.date === todayKey;
@@ -2071,13 +2153,18 @@ function DayStatusBadge({ day, todayKey }) {
       <span
         className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${meta.cls}`}
       >
-        {inProgress ? "Working" : meta.label}
+        {inProgress
+          ? "Working"
+          : day.status === "WEEK_OFF" && day.weekOffNumber
+            ? `Week Off ${day.weekOffNumber}/${day.weekOffAllowance}`
+            : meta.label}
       </span>
       {day.missingPunchOut && !inProgress && (
         <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap bg-orange-50 dark:bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-500/20">
           No punch-out
         </span>
       )}
+      <OtBadge otDays={day.otDays} />
     </div>
   );
 }
@@ -2173,10 +2260,13 @@ function AttendanceTab() {
           acc.expected += s.expectedMinutes;
           acc.worked += s.workedMinutes;
           acc.overtime += s.overtimeMinutes;
+          acc.otDays += s.otDays || 0;
+          acc.extra += s.extraMinutes || 0;
+          acc.short += s.shortMinutes || 0;
           acc.present += s.presentDays;
           acc.half += s.halfDays;
-          acc.absent += s.absentDays;
-          acc.leave += s.leaveDays;
+          acc.weekOff += s.weekOffDays || 0;
+          acc.leave += s.leaveDays || 0;
           acc.missing += s.missingPunchOuts;
           acc.lateDays += s.lateDays;
           return acc;
@@ -2185,9 +2275,12 @@ function AttendanceTab() {
           expected: 0,
           worked: 0,
           overtime: 0,
+          otDays: 0,
+          extra: 0,
+          short: 0,
           present: 0,
           half: 0,
-          absent: 0,
+          weekOff: 0,
           leave: 0,
           missing: 0,
           lateDays: 0,
@@ -2408,11 +2501,10 @@ function AttendanceTab() {
       {/* ---- Totals ---- */}
       {data && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          <Card label="People" value={people.length} />
           <Card
             label="Expected Hrs"
             value={fmtHM(totals.expected)}
-            sub="as per shift"
+            sub={`as per shift · ${people.length} people`}
           />
           <Card label="Worked Hrs" value={fmtHM(totals.worked)} />
           <Card
@@ -2437,15 +2529,22 @@ function AttendanceTab() {
             tone="text-amber-600 dark:text-amber-400"
           />
           <Card
-            label="Absent"
-            value={totals.absent}
-            sub={totals.leave ? `${totals.leave} on leave` : undefined}
+            label="Week Offs"
+            value={totals.weekOff}
+            sub="within monthly limit"
+            tone="text-sky-600 dark:text-sky-400"
+          />
+          <Card
+            label="Leave"
+            value={totals.leave}
+            sub="beyond week-offs"
             tone="text-rose-500"
           />
           <Card
-            label="Overtime"
-            value={fmtHM(totals.overtime)}
-            sub={`${totals.missing} no punch-out · ${totals.lateDays} late`}
+            label="OT Days"
+            value={totals.otDays}
+            sub={`${fmtHM(totals.overtime)} extra · ${totals.missing} no punch-out`}
+            tone="text-violet-600 dark:text-violet-400"
           />
         </div>
       )}
@@ -2454,9 +2553,15 @@ function AttendanceTab() {
         <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
         <span>
           Working hours come from each person's Shift Assignment. A day is{" "}
-          <b>Present</b> only if the hours worked reach the shift's working
-          hours (grace minutes allowed); anything less is <b>Half Day</b>.
-          Sundays and holidays are not counted as expected hours.
+          <b>Present</b> when hours worked reach the shift hours minus the
+          late/early excuse (12h shift → 11h); anything less is <b>Half Day</b>.
+          Extra hours of at least half a shift minus the window (5h 40m) are{" "}
+          <b>Half-day OT</b>, and a full shift minus the window (11h 40m) is{" "}
+          <b>Full-day OT</b>. Smaller extra time isn't OT; it covers late login
+          / short hours in the month. There is no fixed weekly holiday: each
+          month, the first days without a punch count as <b>Week Off</b> (up to
+          each person's limit — see <b>Week-off Rules</b>), and only days beyond
+          that count as <b>Leave</b>.
         </span>
       </div>
 
@@ -2470,11 +2575,11 @@ function AttendanceTab() {
               {[
                 "Person",
                 "Shift",
-                "P / HD / A",
+                "P / HD / WO / L",
                 "Expected",
                 "Worked",
                 "Difference",
-                "Overtime",
+                "OT",
                 "Late",
                 "",
               ].map((h) => (
@@ -2515,11 +2620,14 @@ function AttendanceTab() {
                       {s.halfDays}
                     </span>
                     <span className="text-slate-300">/</span>
-                    <span className="text-rose-500">{s.absentDays}</span>
+                    <span className="text-sky-600 dark:text-sky-400">
+                      {s.weekOffDays}
+                    </span>
+                    <span className="text-slate-300">/</span>
+                    <span className="text-rose-500">{s.leaveDays}</span>
                   </div>
                   <div className="text-[10px] text-slate-400 font-medium">
-                    of {s.workingDays} working day
-                    {s.workingDays === 1 ? "" : "s"}
+                    {s.weekOffsLeft} of {s.weekOffsPerMonth} week-offs left
                     {s.missingPunchOuts
                       ? ` · ${s.missingPunchOuts} no-out`
                       : ""}
@@ -2538,7 +2646,20 @@ function AttendanceTab() {
                 <Td>
                   <DiffText mins={s.differenceMinutes} />
                 </Td>
-                <Td>{s.overtimeMinutes ? fmtHM(s.overtimeMinutes) : "—"}</Td>
+                <Td>
+                  {s.otDays ? (
+                    <div className="font-extrabold text-violet-600 dark:text-violet-400 whitespace-nowrap">
+                      {s.otDays} day{s.otDays === 1 ? "" : "s"}
+                    </div>
+                  ) : (
+                    <div className="text-slate-400">—</div>
+                  )}
+                  {s.extraMinutes > 0 && (
+                    <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap">
+                      +{fmtHM(s.extraMinutes)} extra (not OT)
+                    </div>
+                  )}
+                </Td>
                 <Td>
                   {s.lateDays ? (
                     <span className="text-xs">
@@ -2587,7 +2708,7 @@ function AttendanceTab() {
                 "Worked",
                 "Expected",
                 "Late",
-                "OT",
+                "Extra",
                 "Status",
                 "",
               ].map((h) => (
@@ -2605,13 +2726,6 @@ function AttendanceTab() {
                 >
                   <Td className="font-bold whitespace-nowrap">
                     {fmtDayKey(d.date)}
-                    {d.dayType !== "WORKING" && (
-                      <div className="text-[10px] text-slate-400 font-medium">
-                        {d.dayType === "HOLIDAY"
-                          ? d.holidayName || "Holiday"
-                          : "Week off"}
-                      </div>
-                    )}
                   </Td>
                   <Td>
                     <button
@@ -2650,7 +2764,22 @@ function AttendanceTab() {
                   >
                     {d.lateMinutes ? fmtHM(d.lateMinutes) : "—"}
                   </Td>
-                  <Td>{d.overtimeMinutes ? fmtHM(d.overtimeMinutes) : "—"}</Td>
+                  <Td>
+                    {d.overtimeMinutes ? (
+                      <div className="whitespace-nowrap">
+                        <span className="font-bold">
+                          {fmtHM(d.overtimeMinutes)}
+                        </span>
+                        {!d.otDays && (
+                          <div className="text-[10px] text-slate-400 font-medium">
+                            not OT
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </Td>
                   <Td>
                     <DayStatusBadge day={d} todayKey={todayKey} />
                   </Td>
@@ -2773,6 +2902,8 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
             </div>
             <p className="text-[11px] text-slate-400 font-medium">
               {[p.subtitle, p.department].filter(Boolean).join(" · ")}
+              {p.weekOffRule &&
+                ` · ${p.weekOffRule.perMonth} week-offs/month (${p.weekOffRule.name})`}
               {p.currentShift &&
                 ` · ${p.currentShift.source === "DEFAULT" ? "Default shift" : p.currentShift.name} (${formatTime12h(
                   p.currentShift.startTime,
@@ -2852,11 +2983,11 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
               </div>
 
               {/* Summary */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3">
                 <MiniStat
                   label="Expected"
                   value={fmtHM(s.expectedMinutes)}
-                  sub={`${s.workingDays} working days`}
+                  sub={`${s.workingDays - s.weekOffDays} working days`}
                 />
                 <MiniStat label="Worked" value={fmtHM(s.workedMinutes)} />
                 <MiniStat
@@ -2874,15 +3005,22 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
                   tone="text-amber-600 dark:text-amber-400"
                 />
                 <MiniStat
-                  label="Absent"
-                  value={s.absentDays}
-                  tone="text-rose-500"
-                  sub={s.leaveDays ? `${s.leaveDays} leave` : undefined}
+                  label="Week Off"
+                  value={`${s.weekOffDays} / ${s.weekOffsPerMonth}`}
+                  tone="text-sky-600 dark:text-sky-400"
+                  sub={`${s.weekOffsLeft} left this month`}
                 />
                 <MiniStat
-                  label="Overtime"
-                  value={fmtHM(s.overtimeMinutes)}
-                  sub={s.lateDays ? `late ${s.lateDays}×` : "never late"}
+                  label="Leave"
+                  value={s.leaveDays}
+                  tone="text-rose-500"
+                  sub="beyond week-offs"
+                />
+                <MiniStat
+                  label="OT Days"
+                  value={s.otDays}
+                  tone="text-violet-600 dark:text-violet-400"
+                  sub={`${fmtHM(s.overtimeMinutes)} extra in total`}
                 />
                 <MiniStat
                   label="Attendance"
@@ -2898,6 +3036,8 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
                   }
                 />
               </div>
+
+              <HoursBalance s={s} />
 
               {layout === "calendar" ? (
                 <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 rounded-2xl p-3">
@@ -2928,8 +3068,9 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
                               day: "2-digit",
                               month: "short",
                             }),
-                            meta.label,
-                            d.holidayName,
+                            d.status === "WEEK_OFF" && d.weekOffNumber
+                              ? `Week Off ${d.weekOffNumber} of ${d.weekOffAllowance}`
+                              : meta.label,
                             d.firstPunch
                               ? `In ${fmtPunch(d.firstPunch)}`
                               : null,
@@ -2981,11 +3122,17 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
                                   {fmtHM(d.workingMinutes)}
                                 </div>
                               )}
+                              {d.otDays > 0 && (
+                                <div className="text-[9px] font-extrabold text-violet-600 dark:text-violet-400">
+                                  {d.otDays === 1 ? "Full OT" : "½ OT"}
+                                </div>
+                              )}
                             </div>
                           ) : (
-                            d.holidayName && (
-                              <div className="text-[9px] font-bold text-violet-600 dark:text-violet-400 mt-1 leading-tight line-clamp-2">
-                                {d.holidayName}
+                            d.status === "WEEK_OFF" &&
+                            d.weekOffNumber && (
+                              <div className="text-[9px] font-bold text-sky-600 dark:text-sky-400 mt-1 leading-tight">
+                                {d.weekOffNumber} of {d.weekOffAllowance}
                               </div>
                             )
                           )}
@@ -3013,7 +3160,7 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
                         "Diff",
                         "Late",
                         "Early",
-                        "OT",
+                        "Extra",
                         "Status",
                       ].map((h) => (
                         <Th key={h}>{h}</Th>
@@ -3022,7 +3169,8 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
                   </thead>
                   <tbody>
                     {data.days.map((d) => {
-                      const off = d.dayType !== "WORKING";
+                      const off =
+                        d.dayType !== "WORKING" || d.status === "WEEK_OFF";
                       return (
                         <tr
                           key={d.date}
@@ -3030,11 +3178,6 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
                         >
                           <Td className="font-bold whitespace-nowrap">
                             {fmtDayKey(d.date)}
-                            {d.holidayName && (
-                              <div className="text-[10px] text-violet-500 font-medium">
-                                {d.holidayName}
-                              </div>
-                            )}
                           </Td>
                           <Td>
                             {off && !d.firstPunch ? (
@@ -3096,7 +3239,19 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
                               : "—"}
                           </Td>
                           <Td>
-                            {d.overtimeMinutes ? fmtHM(d.overtimeMinutes) : "—"}
+                            {d.overtimeMinutes ? (
+                              <span className="whitespace-nowrap">
+                                {fmtHM(d.overtimeMinutes)}
+                                {!d.otDays && (
+                                  <span className="text-[10px] text-slate-400">
+                                    {" "}
+                                    (not OT)
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
                           </Td>
                           <Td>
                             <DayStatusBadge day={d} todayKey={todayKey} />
@@ -3110,14 +3265,7 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
 
               {/* Legend */}
               <div className="attendance-no-print flex flex-wrap gap-2 text-[10px] font-bold text-slate-500">
-                {[
-                  "PRESENT",
-                  "HALF_DAY",
-                  "ABSENT",
-                  "ON_LEAVE",
-                  "WEEK_OFF",
-                  "HOLIDAY",
-                ].map((k) => (
+                {["PRESENT", "HALF_DAY", "WEEK_OFF", "LEAVE"].map((k) => (
                   <span
                     key={k}
                     className={`px-2 py-0.5 rounded-full border ${ATT_STATUS_META[k].cls}`}
@@ -3129,6 +3277,66 @@ function PersonAttendanceModal({ person, initialDateKey, onClose }) {
             </div>
           ) : null}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Monthly hours picture: expected vs worked, OT, and how the small extra
+// hours (not enough for OT) cover late login / short days.
+function HoursBalance({ s }) {
+  if (!s) return null;
+  const Row = ({ label, value, tone, strong }) => (
+    <div className="flex justify-between gap-3 py-1">
+      <span className="text-slate-500 dark:text-slate-400">{label}</span>
+      <span
+        className={`${strong ? "font-extrabold" : "font-bold"} ${tone || "text-slate-900 dark:text-white"}`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3">
+        <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-1">
+          Working hours this period
+        </p>
+        <Row label="Expected (as per shift)" value={fmtHM(s.expectedMinutes)} />
+        <Row label="Employee worked" value={fmtHM(s.workedMinutes)} />
+        <Row
+          label="Difference"
+          value={<DiffText mins={s.differenceMinutes} />}
+          strong
+        />
+      </div>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3">
+        <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-1">
+          Overtime &amp; extra hours
+        </p>
+        <Row
+          label="OT days (half = 0.5)"
+          value={s.otDays}
+          tone="text-violet-600 dark:text-violet-400"
+        />
+        <Row
+          label="Extra hours (below OT)"
+          value={`+${fmtHM(s.extraMinutes)}`}
+        />
+        <Row
+          label="Short hours (late login / early out)"
+          value={`−${fmtHM(s.shortMinutes)}`}
+          tone="text-rose-500"
+        />
+        <Row
+          label={
+            s.balanceMinutes >= 0
+              ? "Balance after covering short hours"
+              : "Still short after extra hours"
+          }
+          value={<DiffText mins={s.balanceMinutes} />}
+          strong
+        />
       </div>
     </div>
   );
@@ -3146,6 +3354,466 @@ function MiniStat({ label, value, sub, tone }) {
         {value}
       </p>
       {sub && <p className="text-[10px] font-medium text-slate-400">{sub}</p>}
+    </div>
+  );
+}
+
+// ============================================================================
+// Week-off Rules tab
+//
+// No fixed Sunday off / holidays: each person gets N week-offs per month.
+// Groups are matched against the employee's designation or department (or a
+// staff login's role). Case, spaces and punctuation don't matter, so the
+// keyword "Ward Boy" matches "WARD BOY", "Ward boy" and "Wardboy".
+// ============================================================================
+
+const normalizeMatch = (v) =>
+  String(v ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+const splitKeywords = (text) =>
+  String(text || "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter((k) => normalizeMatch(k));
+
+function ruleForPerson(form, person) {
+  const hay = [person.designation, person.department, person.role]
+    .map(normalizeMatch)
+    .filter(Boolean);
+  for (const g of form.groups) {
+    const hit = splitKeywords(g.keywordsText).some((k) => {
+      const key = normalizeMatch(k);
+      return hay.some((h) => h.includes(key));
+    });
+    if (hit)
+      return {
+        id: g.id,
+        name: g.name || "Unnamed group",
+        perMonth: Number(g.weekOffs) || 0,
+      };
+  }
+  return {
+    id: null,
+    name: "Everyone else",
+    perMonth: Number(form.defaultWeekOffs) || 0,
+  };
+}
+
+const toForm = (policy) => ({
+  defaultWeekOffs: policy?.defaultWeekOffs ?? 4,
+  groups: (policy?.groups || []).map((g) => ({
+    id: g.id,
+    name: g.name,
+    keywordsText: (g.keywords || []).join(", "),
+    weekOffs: g.weekOffs,
+  })),
+});
+
+function NumberStepper({ value, onChange, min = 0, max = 15 }) {
+  const n = Number(value) || 0;
+  const set = (v) => onChange(Math.min(max, Math.max(min, v)));
+  return (
+    <div className="inline-flex items-center rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => set(n - 1)}
+        disabled={n <= min}
+        className="w-8 h-8 text-sm font-extrabold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-30"
+        aria-label="Decrease"
+      >
+        −
+      </button>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) =>
+          onChange(e.target.value === "" ? "" : Number(e.target.value))
+        }
+        onBlur={() => set(n)}
+        className="w-10 h-8 text-center text-sm font-extrabold text-slate-900 dark:text-white bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+      />
+      <button
+        type="button"
+        onClick={() => set(n + 1)}
+        disabled={n >= max}
+        className="w-8 h-8 text-sm font-extrabold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-30"
+        aria-label="Increase"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+function WeekOffSettingsTab() {
+  const [form, setForm] = useState(null);
+  const [saved, setSaved] = useState(null);
+  const [people, setPeople] = useState([]);
+  const [meta, setMeta] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [search, setSearch] = useState("");
+  const [ruleFilter, setRuleFilter] = useState("ALL");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await api.get("/biometric/settings/week-offs");
+      const f = toForm(res.policy);
+      setForm(f);
+      setSaved(JSON.stringify(f));
+      setPeople(res.people || []);
+      setMeta({
+        needsMigration: res.policy?.needsMigration,
+        isDefault: res.policy?.isDefault,
+        updatedAt: res.policy?.updatedAt,
+      });
+    } catch (err) {
+      setError(err.message || "Could not load week-off settings.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const dirty = form && saved !== JSON.stringify(form);
+
+  const withRules = useMemo(
+    () =>
+      form ? people.map((p) => ({ ...p, rule: ruleForPerson(form, p) })) : [],
+    [form, people],
+  );
+
+  const counts = useMemo(() => {
+    const c = new Map();
+    for (const p of withRules) {
+      const k = p.rule.id || "__default";
+      c.set(k, (c.get(k) || 0) + 1);
+    }
+    return c;
+  }, [withRules]);
+
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return withRules.filter((p) => {
+      if (ruleFilter !== "ALL" && (p.rule.id || "__default") !== ruleFilter)
+        return false;
+      if (
+        q &&
+        !`${p.fullName} ${p.designation} ${p.department} ${p.role}`
+          .toLowerCase()
+          .includes(q)
+      )
+        return false;
+      return true;
+    });
+  }, [withRules, search, ruleFilter]);
+
+  const updateGroup = (id, patch) =>
+    setForm((f) => ({
+      ...f,
+      groups: f.groups.map((g) => (g.id === id ? { ...g, ...patch } : g)),
+    }));
+
+  const addGroup = () =>
+    setForm((f) => ({
+      ...f,
+      groups: [
+        ...f.groups,
+        {
+          id: `group-${Date.now()}`,
+          name: "",
+          keywordsText: "",
+          weekOffs: 2,
+        },
+      ],
+    }));
+
+  const removeGroup = (id) =>
+    setForm((f) => ({ ...f, groups: f.groups.filter((g) => g.id !== id) }));
+
+  const save = async () => {
+    setError("");
+    setInfo("");
+    const bad = form.groups.find((g) => !splitKeywords(g.keywordsText).length);
+    if (bad) {
+      setError(
+        `Add at least one designation keyword for "${bad.name || "the new group"}", or remove that group.`,
+      );
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.put("/biometric/settings/week-offs", {
+        defaultWeekOffs: Number(form.defaultWeekOffs) || 0,
+        groups: form.groups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          keywords: splitKeywords(g.keywordsText),
+          weekOffs: Number(g.weekOffs) || 0,
+        })),
+      });
+      const f = toForm(res.policy);
+      setForm(f);
+      setSaved(JSON.stringify(f));
+      setMeta({
+        needsMigration: false,
+        isDefault: false,
+        updatedAt: res.policy?.updatedAt,
+      });
+      setInfo(
+        "Saved. Attendance reports now use these week-off limits (past months too).",
+      );
+    } catch (err) {
+      setError(err.message || "Could not save week-off settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading && !form) return <Loading label="Loading week-off rules..." />;
+  if (!form) return <Banner error={error} />;
+
+  return (
+    <div className="space-y-4">
+      <Banner error={error} info={info} />
+
+      {meta.needsMigration && (
+        <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-2xl px-4 py-3 text-amber-700 dark:text-amber-400 text-xs font-bold">
+          Using the built-in defaults (ward boy &amp; housekeeping 2, others 4).
+          To save changes, run{" "}
+          <code className="font-mono">
+            npx prisma migrate dev --name attendance_policy
+          </code>{" "}
+          on the server once.
+        </div>
+      )}
+
+      <SectionCard title="How week-offs work" icon={Info}>
+        <ul className="text-xs text-slate-600 dark:text-slate-300 font-medium space-y-1.5 list-disc pl-4">
+          <li>
+            The hospital works every day —{" "}
+            <b>no Saturday/Sunday off and no holidays</b>.
+          </li>
+          <li>
+            Each person gets a fixed number of <b>week-offs per month</b>. The
+            first days in a month without a punch are shown as <b>Week Off</b>.
+          </li>
+          <li>
+            Only the days beyond that limit are shown as <b>Leave</b>.
+          </li>
+          <li>
+            Keywords are matched against the designation / department (or role
+            for staff logins). Spelling style doesn't matter — "Ward Boy", "WARD
+            BOY" and "wardboy" are the same.
+          </li>
+        </ul>
+      </SectionCard>
+
+      <SectionCard title="Week-offs per month" icon={CalendarOff}>
+        <div className="space-y-3">
+          {form.groups.map((g) => (
+            <div
+              key={g.id}
+              className="grid grid-cols-1 md:grid-cols-[1fr_1.6fr_auto_auto] gap-3 items-end bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"
+            >
+              <Field
+                label="Group name"
+                value={g.name}
+                onChange={(v) => updateGroup(g.id, { name: v })}
+                placeholder="Ward Boy & Housekeeping"
+              />
+              <div>
+                <Field
+                  label="Designation keywords (comma separated)"
+                  value={g.keywordsText}
+                  onChange={(v) => updateGroup(g.id, { keywordsText: v })}
+                  placeholder="Ward Boy, Housekeeping"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">
+                  Week-offs / month
+                </label>
+                <NumberStepper
+                  value={g.weekOffs}
+                  onChange={(v) => updateGroup(g.id, { weekOffs: v })}
+                />
+              </div>
+              <div className="flex items-center gap-2 md:pb-1">
+                <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap">
+                  {counts.get(g.id) || 0} people
+                </span>
+                <IconBtn title="Remove group" onClick={() => removeGroup(g.id)}>
+                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                </IconBtn>
+              </div>
+            </div>
+          ))}
+
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_1.6fr_auto_auto] gap-3 items-end border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-3">
+            <div>
+              <p className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">
+                Group
+              </p>
+              <p className="text-xs font-extrabold text-slate-900 dark:text-white py-2">
+                Everyone else
+              </p>
+            </div>
+            <p className="text-[11px] text-slate-400 font-medium pb-2">
+              Nurses, doctors, front desk, physiotherapy and everyone not in a
+              group above.
+            </p>
+            <div>
+              <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">
+                Week-offs / month
+              </label>
+              <NumberStepper
+                value={form.defaultWeekOffs}
+                onChange={(v) => setForm((f) => ({ ...f, defaultWeekOffs: v }))}
+              />
+            </div>
+            <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap md:pb-2">
+              {counts.get("__default") || 0} people
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <button
+              type="button"
+              onClick={addGroup}
+              className="flex items-center gap-1.5 text-xs font-extrabold text-[#0f4a29] dark:text-[#52b788] hover:underline"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add another group
+            </button>
+            <div className="flex items-center gap-2">
+              {dirty && (
+                <button
+                  type="button"
+                  onClick={() => setForm(JSON.parse(saved))}
+                  className="text-xs font-bold text-slate-500 px-3 py-2"
+                >
+                  Undo changes
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving || !dirty}
+                className="flex items-center gap-1.5 bg-[#0f4a29] hover:bg-[#165a34] text-white text-xs font-extrabold px-5 py-2.5 rounded-full shadow-xs disabled:opacity-40"
+              >
+                {saving ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                {saving ? "Saving..." : "Save rules"}
+              </button>
+            </div>
+          </div>
+          {meta.updatedAt && !dirty && (
+            <p className="text-[10px] text-slate-400 font-medium text-right">
+              Last saved{" "}
+              {new Date(meta.updatedAt).toLocaleString("en-IN", {
+                timeZone: IST_TZ,
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </p>
+          )}
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Who gets how many week-offs" icon={Users2}>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mb-3">
+          Live preview of the rules above — check every ward boy and
+          housekeeping person lands in the right group before saving.
+        </p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <SearchBar
+            value={search}
+            onChange={setSearch}
+            placeholder="Search name or designation..."
+          />
+          <select
+            value={ruleFilter}
+            onChange={(e) => setRuleFilter(e.target.value)}
+            className={selectCls}
+          >
+            <option value="ALL">All groups ({withRules.length})</option>
+            {form.groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name || "Unnamed group"} ({counts.get(g.id) || 0})
+              </option>
+            ))}
+            <option value="__default">
+              Everyone else ({counts.get("__default") || 0})
+            </option>
+          </select>
+        </div>
+        <TableCard>
+          <thead>
+            <tr>
+              {[
+                "Name",
+                "Designation / Role",
+                "Department",
+                "Group",
+                "Week-offs / month",
+              ].map((h) => (
+                <Th key={h}>{h}</Th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((p) => (
+              <tr
+                key={p.key}
+                className="border-t border-slate-100 dark:border-slate-800/60"
+              >
+                <Td className="font-extrabold text-slate-900 dark:text-white">
+                  <div>{p.fullName}</div>
+                  <TypeChip personType={p.personType} />
+                </Td>
+                <Td>{p.designation || p.role || "—"}</Td>
+                <Td>{p.department || "—"}</Td>
+                <Td>
+                  <span
+                    className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${
+                      p.rule.id
+                        ? "bg-sky-50 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-500/20"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700"
+                    }`}
+                  >
+                    {p.rule.name}
+                  </span>
+                </Td>
+                <Td className="font-extrabold">{p.rule.perMonth}</Td>
+              </tr>
+            ))}
+            {shown.length === 0 && (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-5 py-8 text-center text-xs text-slate-400 font-medium"
+                >
+                  No one matches.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </TableCard>
+      </SectionCard>
     </div>
   );
 }

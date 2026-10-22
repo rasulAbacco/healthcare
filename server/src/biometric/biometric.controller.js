@@ -181,6 +181,24 @@ export const attendanceReport = handle(200, async (req) => {
   });
 });
 
+// ============================================================================
+// Week-off settings
+// ============================================================================
+
+// GET /settings/week-offs -> { policy, people }
+export const getWeekOffSettings = handle(200, async () =>
+  biometricService.getWeekOffSettings(),
+);
+
+// PUT /settings/week-offs  { defaultWeekOffs, groups }
+export const saveWeekOffSettings = handle(200, async (req) => {
+  const policy = await biometricService.saveWeekOffPolicy(
+    req.body || {},
+    req.user?.id || null,
+  );
+  return { policy, message: "Week-off settings saved." };
+});
+
 // GET /api/biometric/punch — open it in a browser on the URL your device
 // posts to. "engine" must say ist-v4; if the page 404s or shows anything
 // else, that server is still running old punch code.

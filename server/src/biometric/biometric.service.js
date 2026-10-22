@@ -21,6 +21,11 @@ import {
   shiftSummary,
   DUPLICATE_PUNCH_WINDOW_SECONDS,
   MAX_REPORT_RANGE_DAYS,
+  DEFAULT_WEEK_OFF_POLICY,
+  sanitizeWeekOffPolicy,
+  weekOffRuleFor,
+  monthKeyOf,
+  startOfMonthKey,
 } from "./biometric.helper.js";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -470,6 +475,125 @@ export async function searchEmployees(search = "", id = null) {
     take: 20,
     orderBy: { fullName: "asc" },
   });
+}
+
+// ============================================================================
+// Week-off settings (Week-offs tab)
+//
+// Stored as a single row in AttendancePolicy (id "default"). If the table
+// doesn't exist yet (migration not run) the built-in defaults are used, so
+// reports keep working — saving then tells the admin to run the migration.
+// ============================================================================
+
+const POLICY_ID = "default";
+
+function isMissingTable(err) {
+  return (
+    err?.code === "P2021" ||
+    err?.code === "P2022" ||
+    /does not exist/i.test(err?.message || "")
+  );
+}
+
+export async function getWeekOffPolicy(db = prisma) {
+  try {
+    const row = await db.attendancePolicy.findUnique({
+      where: { id: POLICY_ID },
+    });
+    if (!row)
+      return {
+        ...sanitizeWeekOffPolicy(DEFAULT_WEEK_OFF_POLICY),
+        isDefault: true,
+        updatedAt: null,
+      };
+    return {
+      ...sanitizeWeekOffPolicy({
+        defaultWeekOffs: row.defaultWeekOffs,
+        groups: row.groups,
+      }),
+      isDefault: false,
+      updatedAt: row.updatedAt,
+    };
+  } catch (err) {
+    if (isMissingTable(err) || !db.attendancePolicy) {
+      return {
+        ...sanitizeWeekOffPolicy(DEFAULT_WEEK_OFF_POLICY),
+        isDefault: true,
+        updatedAt: null,
+        needsMigration: true,
+      };
+    }
+    throw err;
+  }
+}
+
+// GET /settings/week-offs — the rules plus everyone they apply to, so the
+// admin can check that every ward boy / housekeeping person is matched.
+export async function getWeekOffSettings() {
+  const [policy, employees, users] = await Promise.all([
+    getWeekOffPolicy(),
+    prisma.employee.findMany({
+      where: { isActive: true },
+      select: { id: true, fullName: true, designation: true, department: true },
+      orderBy: { fullName: "asc" },
+    }),
+    prisma.user.findMany({
+      where: { isActive: true },
+      select: { id: true, fullName: true, role: true },
+      orderBy: { fullName: "asc" },
+    }),
+  ]);
+
+  const people = [
+    ...employees.map((e) => ({
+      key: `EMPLOYEE:${e.id}`,
+      personType: "EMPLOYEE",
+      fullName: e.fullName,
+      designation: e.designation || "",
+      department: e.department || "",
+      role: "",
+    })),
+    ...users.map((u) => ({
+      key: `USER:${u.id}`,
+      personType: "USER",
+      fullName: u.fullName,
+      designation: "",
+      department: "",
+      role: u.role || "",
+    })),
+  ];
+
+  return { policy, people };
+}
+
+// PUT /settings/week-offs  { defaultWeekOffs, groups: [{ name, keywords, weekOffs }] }
+export async function saveWeekOffPolicy(body = {}, userId = null) {
+  const clean = sanitizeWeekOffPolicy(body);
+  try {
+    await prisma.attendancePolicy.upsert({
+      where: { id: POLICY_ID },
+      create: {
+        id: POLICY_ID,
+        defaultWeekOffs: clean.defaultWeekOffs,
+        groups: clean.groups,
+        updatedById: userId,
+      },
+      update: {
+        defaultWeekOffs: clean.defaultWeekOffs,
+        groups: clean.groups,
+        updatedById: userId,
+      },
+    });
+  } catch (err) {
+    if (isMissingTable(err) || !prisma.attendancePolicy) {
+      throw httpError(
+        503,
+        "Week-off settings table is missing. Run `npx prisma migrate dev --name attendance_policy` on the server, then save again.",
+      );
+    }
+    throw err;
+  }
+  return getWeekOffPolicy();
 }
 
 // ============================================================================
@@ -959,7 +1083,7 @@ export async function rebuildAttendance({ from, to } = {}) {
     istDayStartInstant(fromKey).getTime() - 12 * HOUR_MS,
   );
   const windowEnd = new Date(
-    istDayStartInstant(addDays(toKey, 1)).getTime() + 14 * HOUR_MS,
+    istDayStartInstant(addDays(toKey, 1)).getTime() + 20 * HOUR_MS,
   );
 
   const logs = await prisma.biometricLog.findMany({
@@ -1145,6 +1269,16 @@ export async function listLogs({
 // ============================================================================
 
 // Core builder used by both the overview (everyone) and the per-person view.
+//
+// WEEK-OFF RULES (see biometric.helper.js):
+//   * No fixed Sunday off and no holidays — every day is a working day.
+//   * Each person gets N week-offs per month (ward boys / housekeeping 2,
+//     everyone else 4, editable in the Week-offs tab).
+//   * Days with no punch (and days marked ON_LEAVE) are counted in date
+//     order from the 1st of the month: the first N become WEEK OFF, any more
+//     become LEAVE.
+// To count correctly, days are always evaluated from the 1st of the month of
+// `fromKey`, even when the report itself starts mid-month (e.g. a week view).
 async function buildAttendanceData({
   fromKey,
   toKey,
@@ -1152,21 +1286,20 @@ async function buildAttendanceData({
   onlyPerson = null,
   withPunches = false,
 }) {
-  const [mappings, records, holidays] = await Promise.all([
+  const evalFrom = startOfMonthKey(fromKey);
+
+  const [mappings, records, policy] = await Promise.all([
     prisma.biometricMapping.findMany({
       where: onlyPerson ? personWhere(onlyPerson) : { isActive: true },
       orderBy: [{ isActive: "desc" }, { createdAt: "asc" }],
     }),
     prisma.attendance.findMany({
       where: {
-        date: { gte: fromKey, lte: toKey },
+        date: { gte: evalFrom, lte: toKey },
         ...(onlyPerson ? personWhere(onlyPerson) : {}),
       },
     }),
-    prisma.holiday.findMany({
-      where: { date: { gte: fromKey, lte: toKey } },
-      orderBy: { date: "asc" },
-    }),
+    getWeekOffPolicy(),
   ]);
 
   // ---- Who is in this report ----
@@ -1186,7 +1319,11 @@ async function buildAttendanceData({
     }
   };
   for (const m of mappings) addPerson(m.userId, m.employeeId, m);
-  for (const r of records) addPerson(r.userId, r.employeeId, null);
+  for (const r of records) {
+    // Only pull in extra people who actually have a record inside the range.
+    if (r.date >= fromKey || onlyPerson)
+      addPerson(r.userId, r.employeeId, null);
+  }
   if (onlyPerson && !people.size)
     addPerson(onlyPerson.userId, onlyPerson.employeeId, null);
 
@@ -1214,16 +1351,13 @@ async function buildAttendanceData({
   ]);
   const usersById = new Map(users.map((u) => [u.id, u]));
 
-  // ---- Index records & holidays ----
+  // ---- Index records ----
   const recordsByKey = new Map();
   for (const r of records) {
     const key = `${personKey(r)}|${dateKeyToString(r.date)}`;
     if (!recordsByKey.has(key)) recordsByKey.set(key, []);
     recordsByKey.get(key).push(r);
   }
-  const holidaysByDate = new Map(
-    holidays.map((h) => [dateKeyToString(h.date), h]),
-  );
 
   // ---- Raw punches (per-person view only) ----
   const punchesByKey = new Map();
@@ -1239,7 +1373,7 @@ async function buildAttendanceData({
                 istDayStartInstant(fromKey).getTime() - 12 * HOUR_MS,
               ),
               lt: new Date(
-                istDayStartInstant(addDays(toKey, 1)).getTime() + 14 * HOUR_MS,
+                istDayStartInstant(addDays(toKey, 1)).getTime() + 20 * HOUR_MS,
               ),
             },
           },
@@ -1277,14 +1411,22 @@ async function buildAttendanceData({
     }
   }
 
-  const dates = eachDateKey(fromKey, toKey);
+  const evalDates = eachDateKey(evalFrom, toKey);
   const shiftRefDate =
     toKey < today ? toKey : today < fromKey ? fromKey : today;
+  // Month whose week-off balance is shown (the latest month in the range,
+  // or the current month if the range runs into the future).
+  const balanceMonth = monthKeyOf(shiftRefDate);
 
   const reports = allPeople.map((p) => {
     const user = p.userId ? usersById.get(p.userId) : null;
     const employee = p.employeeId ? ctx.employeesById.get(p.employeeId) : null;
     const current = resolveShift(ctx, p, shiftRefDate);
+    const rule = weekOffRuleFor(policy, {
+      designation: employee?.designation,
+      department: employee?.department,
+      role: user?.role,
+    });
 
     const personInfo = {
       key: personKey(p),
@@ -1298,26 +1440,26 @@ async function buildAttendanceData({
       joiningDate: employee?.joiningDate || null,
       biometricIds: p.biometricIds,
       currentShift: shiftSummary(current.shift, current.source),
+      weekOffRule: rule,
     };
 
     const joining = employee?.joiningDate
       ? new Date(employee.joiningDate).getTime()
       : null;
 
-    const days = dates.map((date) => {
+    // Week-offs used so far, per month ("2026-10" -> n).
+    const usedByMonth = new Map();
+
+    const allDays = evalDates.map((date) => {
       const ds = dateKeyToString(date);
-      const holiday = holidaysByDate.get(ds);
+      const mk = ds.slice(0, 7);
       const weekday = dateKeyWeekday(date);
       const { shift, source } = resolveShift(ctx, p, date);
 
       let dayType = "WORKING";
       if (joining && date.getTime() < joining) dayType = "BEFORE_JOINING";
       else if (date > today) dayType = "FUTURE";
-      else if (holiday) dayType = "HOLIDAY";
-      else if (weekday === 0) dayType = "WEEK_OFF";
 
-      const expectedMinutes =
-        dayType === "WORKING" ? shiftWorkingMinutes(shift) : 0;
       const recs = recordsByKey.get(`${personInfo.key}|${ds}`) || [];
 
       let firstPunch = null;
@@ -1326,18 +1468,20 @@ async function buildAttendanceData({
       let lateMinutes = 0;
       let earlyExitMinutes = 0;
       let overtimeMinutes = 0;
+      let otDays = 0;
+      let extraMinutes = 0;
+      let shortMinutes = 0;
       let status;
 
-      if (recs.length > 1) {
-        // Old duplicate rows — merge them live (Rebuild fixes them for good).
-        const merged = buildDayFromPunches(
-          recs.flatMap((r) => {
-            const f = correctedRecordPunches(r);
-            return [f.firstPunch, f.lastPunch];
-          }),
-          shift,
-          date,
-        );
+      // Punch times from the stored row(s) (5h30m-skew corrected). The day
+      // is always re-evaluated with the CURRENT shift rules, so changing the
+      // excuse / window on a shift updates past days without a rebuild.
+      const punchTimes = recs.flatMap((r) => {
+        const f = correctedRecordPunches(r);
+        return [f.firstPunch, f.lastPunch];
+      });
+
+      if (punchTimes.some(Boolean)) {
         ({
           firstPunch,
           lastPunch,
@@ -1345,57 +1489,44 @@ async function buildAttendanceData({
           lateMinutes,
           earlyExitMinutes,
           overtimeMinutes,
+          otDays,
+          extraMinutes,
+          shortMinutes,
           status,
-        } = merged);
-        if (recs.some((r) => r.status === "ON_LEAVE") && !firstPunch)
-          status = "ON_LEAVE";
-      } else if (recs.length === 1) {
-        const r = recs[0];
-        const fixed = correctedRecordPunches(r);
-        if (fixed.skewed) {
-          // Saved by an old/out-of-date punch handler with times 5h30m ahead:
-          // show the real IST times and recompute the day from them.
-          const live = buildDayFromPunches(
-            [fixed.firstPunch, fixed.lastPunch],
-            shift,
-            date,
-          );
-          ({
-            firstPunch,
-            lastPunch,
-            workingMinutes,
-            lateMinutes,
-            earlyExitMinutes,
-            overtimeMinutes,
-            status,
-          } = live);
-        } else {
-          firstPunch = r.firstPunch;
-          lastPunch = r.lastPunch;
-          if (
-            firstPunch &&
-            lastPunch &&
-            new Date(firstPunch).getTime() === new Date(lastPunch).getTime()
-          ) {
-            lastPunch = null;
-          }
-          workingMinutes = r.workingMinutes;
-          lateMinutes = r.lateMinutes;
-          earlyExitMinutes = r.earlyExitMinutes;
-          overtimeMinutes = r.overtimeMinutes;
-          status = r.status;
-        }
+        } = buildDayFromPunches(punchTimes, shift, date));
+      } else if (recs.some((r) => r.status === "ON_LEAVE")) {
+        status = "ON_LEAVE";
       } else if (dayType === "WORKING") {
         status = date.getTime() === today.getTime() ? "NOT_YET" : "ABSENT";
       } else {
         status = dayType;
       }
 
+      // ---- Week-off allowance: first N days off in the month ----
+      let weekOffNumber = null;
+      if (
+        dayType === "WORKING" &&
+        (status === "ABSENT" || status === "ON_LEAVE")
+      ) {
+        const used = usedByMonth.get(mk) || 0;
+        if (used < rule.perMonth) {
+          usedByMonth.set(mk, used + 1);
+          weekOffNumber = used + 1;
+          status = "WEEK_OFF";
+        } else {
+          status = "LEAVE";
+        }
+      }
+
+      const expectedMinutes =
+        dayType === "WORKING" && status !== "WEEK_OFF"
+          ? shiftWorkingMinutes(shift)
+          : 0;
+
       return {
         date: ds,
         weekday,
         dayType,
-        holidayName: holiday?.name || null,
         shift: shiftSummary(shift, source),
         expectedMinutes,
         hasRecord: recs.length > 0,
@@ -1406,12 +1537,21 @@ async function buildAttendanceData({
         lateMinutes,
         earlyExitMinutes,
         overtimeMinutes,
+        otDays,
+        extraMinutes,
+        shortMinutes,
         status,
+        weekOffNumber,
+        weekOffAllowance: rule.perMonth,
         punches: withPunches
           ? punchesByKey.get(`${personInfo.key}|${ds}`) || []
           : undefined,
       };
     });
+
+    // Only the requested range is returned / summarised.
+    const fromStr = dateKeyToString(fromKey);
+    const days = allDays.filter((d) => d.date >= fromStr);
 
     const summary = days.reduce(
       (acc, d) => {
@@ -1419,16 +1559,18 @@ async function buildAttendanceData({
         acc.expectedMinutes += d.expectedMinutes;
         acc.workedMinutes += d.workingMinutes || 0;
         acc.overtimeMinutes += d.overtimeMinutes || 0;
+        acc.otDays += d.otDays || 0;
+        acc.extraMinutes += d.extraMinutes || 0;
+        acc.shortMinutes += d.shortMinutes || 0;
         acc.lateMinutes += d.lateMinutes || 0;
         acc.earlyExitMinutes += d.earlyExitMinutes || 0;
         if (d.lateMinutes > 0) acc.lateDays += 1;
         if (d.missingPunchOut) acc.missingPunchOuts += 1;
         if (d.status === "PRESENT") acc.presentDays += 1;
         else if (d.status === "HALF_DAY") acc.halfDays += 1;
-        else if (d.status === "ABSENT") acc.absentDays += 1;
-        else if (d.status === "ON_LEAVE") acc.leaveDays += 1;
+        else if (d.status === "WEEK_OFF") acc.weekOffDays += 1;
+        else if (d.status === "LEAVE") acc.leaveDays += 1;
         else if (d.status === "NOT_YET") acc.notYetDays += 1;
-        if (d.dayType !== "WORKING" && d.firstPunch) acc.offDaysWorked += 1;
         return acc;
       },
       {
@@ -1436,19 +1578,35 @@ async function buildAttendanceData({
         expectedMinutes: 0,
         workedMinutes: 0,
         overtimeMinutes: 0,
+        otDays: 0,
+        extraMinutes: 0,
+        shortMinutes: 0,
         lateMinutes: 0,
         earlyExitMinutes: 0,
         lateDays: 0,
         missingPunchOuts: 0,
         presentDays: 0,
         halfDays: 0,
-        absentDays: 0,
+        weekOffDays: 0,
         leaveDays: 0,
         notYetDays: 0,
-        offDaysWorked: 0,
       },
     );
+    // Older screens read absentDays — it now means "leave beyond week-offs".
+    summary.absentDays = summary.leaveDays;
     summary.differenceMinutes = summary.workedMinutes - summary.expectedMinutes;
+    // Extra hours that didn't reach half-day OT make up for late login /
+    // short days in the same period.
+    summary.coveredMinutes = Math.min(
+      summary.extraMinutes,
+      summary.shortMinutes,
+    );
+    summary.balanceMinutes = summary.extraMinutes - summary.shortMinutes;
+    summary.weekOffsPerMonth = rule.perMonth;
+    summary.weekOffBalanceMonth = balanceMonth;
+    summary.weekOffsUsed = usedByMonth.get(balanceMonth) || 0;
+    summary.weekOffsLeft = Math.max(0, rule.perMonth - summary.weekOffsUsed);
+
     const countable = summary.workingDays - summary.notYetDays;
     summary.attendancePercent =
       countable > 0
@@ -1457,7 +1615,7 @@ async function buildAttendanceData({
             Math.round(
               ((summary.presentDays +
                 summary.halfDays * 0.5 +
-                summary.leaveDays) /
+                summary.weekOffDays) /
                 countable) *
                 100,
             ),
@@ -1471,11 +1629,11 @@ async function buildAttendanceData({
 
   return {
     reports,
-    holidays: holidays.map((h) => ({
-      date: dateKeyToString(h.date),
-      name: h.name,
-      type: h.type,
-    })),
+    holidays: [],
+    policy: {
+      defaultWeekOffs: policy.defaultWeekOffs,
+      groups: policy.groups,
+    },
   };
 }
 
@@ -1483,7 +1641,7 @@ async function buildAttendanceData({
 // Per-person summary + flattened daily rows for the whole range.
 export async function attendanceOverview({ from, to } = {}) {
   const { fromKey, toKey, today } = parseRange(from, to);
-  const { reports, holidays } = await buildAttendanceData({
+  const { reports, holidays, policy } = await buildAttendanceData({
     fromKey,
     toKey,
     today,
@@ -1504,6 +1662,7 @@ export async function attendanceOverview({ from, to } = {}) {
     to: dateKeyToString(toKey),
     today: dateKeyToString(today),
     holidays,
+    policy,
     people: reports.map(({ person, summary }) => ({ person, summary })),
     days,
   };
@@ -1543,7 +1702,7 @@ export async function personAttendance({
     type === "USER"
       ? { userId: personId, employeeId: null }
       : { userId: null, employeeId: personId };
-  const { reports, holidays } = await buildAttendanceData({
+  const { reports, holidays, policy } = await buildAttendanceData({
     fromKey,
     toKey,
     today,
@@ -1557,6 +1716,7 @@ export async function personAttendance({
     to: dateKeyToString(toKey),
     today: dateKeyToString(today),
     holidays,
+    policy,
     person: report.person,
     summary: report.summary,
     days: report.days,

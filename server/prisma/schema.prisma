@@ -729,6 +729,8 @@ model Shift {
   breakMinutes         Int       @default(0) // unpaid break, subtracted from working hours
   overtimeAfterMinutes Int       @default(0) // buffer past shift end before extra time counts as OT
   totalWorkingMinutes  Int // derived: (end - start), overnight-adjusted, minus breakMinutes — stored so it doesn't need recomputing on every read
+  lateExcuseMinutes    Int       @default(60) // late login + early logout allowed in total and still a FULL day (12h shift -> full day at 11h)
+  dayWindowMinutes     Int       @default(20) // window below the half-day / full-day OT lines (12h shift -> half-day OT at 5h40m extra, full-day OT at 11h40m extra)
   description          String?
   isActive             Boolean   @default(true)
   createdAt            DateTime  @default(now())
@@ -765,6 +767,23 @@ model ShiftAssignmentHistory {
   changedBy     User?    @relation(fields: [changedById], references: [id])
 
   @@map("shift_assignment_history")
+}
+
+// Week-off rules for the biometric attendance reports. One row (id "default").
+// There is no fixed weekly holiday: each person gets `weekOffs` days off per
+// month — the first N days without a punch in a month show as WEEK OFF, the
+// rest as LEAVE. `groups` = [{ id, name, keywords: ["Ward Boy", ...], weekOffs }]
+// matched against Employee designation/department or User role (case and
+// spacing don't matter). Everyone not in a group gets defaultWeekOffs.
+model AttendancePolicy {
+  id              String   @id @default("default")
+  defaultWeekOffs Int      @default(4)
+  groups          Json     @default("[]")
+  updatedById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("attendance_policies")
 }
 
 enum AttendanceStatus {

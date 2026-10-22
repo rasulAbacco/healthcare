@@ -37,6 +37,11 @@ const IST_OFFSET_MS = IST_OFFSET_MINUTES * MINUTE_MS;
 export const DEFAULT_SHIFT_START_MINUTES = 9 * 60; // 09:00
 export const DEFAULT_FULL_DAY_MINUTES = 8 * 60; // 480
 export const DEFAULT_GRACE_MINUTES = 10;
+// Per-shift defaults for the full-day / half-day / OT rules (editable on
+// each shift): up to 1 hour of late login + early logout is excused for a
+// full day, and half-day / OT lines get a 20-minute window.
+export const DEFAULT_LATE_EXCUSE_MINUTES = 60;
+export const DEFAULT_DAY_WINDOW_MINUTES = 20;
 
 export const DEFAULT_SHIFT = {
   id: null,
@@ -50,6 +55,8 @@ export const DEFAULT_SHIFT = {
   breakMinutes: 0,
   overtimeAfterMinutes: 0,
   totalWorkingMinutes: DEFAULT_FULL_DAY_MINUTES,
+  lateExcuseMinutes: DEFAULT_LATE_EXCUSE_MINUTES,
+  dayWindowMinutes: DEFAULT_DAY_WINDOW_MINUTES,
   isActive: true,
 };
 
@@ -111,16 +118,24 @@ export function istDayStartInstant(dateKey) {
 export function eachDateKey(fromKey, toKey) {
   const out = [];
   const end = new Date(toKey).getTime();
-  for (let t = new Date(fromKey).getTime(); t <= end; t += DAY_MS) out.push(new Date(t));
+  for (let t = new Date(fromKey).getTime(); t <= end; t += DAY_MS)
+    out.push(new Date(t));
   return out;
 }
 
 export function daysInclusive(fromKey, toKey) {
-  return Math.round((new Date(toKey).getTime() - new Date(fromKey).getTime()) / DAY_MS) + 1;
+  return (
+    Math.round(
+      (new Date(toKey).getTime() - new Date(fromKey).getTime()) / DAY_MS,
+    ) + 1
+  );
 }
 
 export function minutesBetween(from, to) {
-  return Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / MINUTE_MS));
+  return Math.max(
+    0,
+    Math.round((new Date(to).getTime() - new Date(from).getTime()) / MINUTE_MS),
+  );
 }
 
 function istMinutesOfDay(value) {
@@ -168,7 +183,10 @@ export function shiftSpanMinutes(shift) {
 
 // Working minutes after the unpaid break — stored as Shift.totalWorkingMinutes.
 export function computeShiftWorkingMinutes(shift) {
-  return Math.max(0, shiftSpanMinutes(shift) - (Number(shift?.breakMinutes) || 0));
+  return Math.max(
+    0,
+    shiftSpanMinutes(shift) - (Number(shift?.breakMinutes) || 0),
+  );
 }
 
 // Expected working minutes for one day on this shift.
@@ -177,18 +195,89 @@ export function shiftWorkingMinutes(shift) {
   return Number(s.totalWorkingMinutes) || computeShiftWorkingMinutes(s);
 }
 
-// Minimum minutes worked for the day to count as a FULL day (PRESENT).
-// Anything less is a HALF_DAY. The "grace after" minutes are allowed off so
-// someone who arrives within the grace window and leaves on time is still a
-// full day.
-export function requiredMinutesForFullDay(shift) {
+// ----------------------------------------------------------------------------
+// Full day / half day / overtime rules
+//
+// Example: 8 AM – 8 PM shift = 12h, excuse 60 min, window 20 min.
+//   * FULL DAY (Present)  worked >= 12h − 1h excuse         = 11h
+//   * HALF DAY            any punch-in + punch-out below that
+//   * Extra hours = worked − 12h:
+//       FULL-DAY OT  extra >= 12h − 20m                     = 11h 40m
+//       HALF-DAY OT  extra >= 6h  − 20m                     = 5h 40m
+//       below that   not OT — the extra minutes go into the
+//                    month's balance to cover late login /
+//                    short days, and show in the monthly report.
+// ----------------------------------------------------------------------------
+
+function minutesSetting(value, fallback) {
+  const n = Number(value);
+  if (value === null || value === undefined || value === "" || Number.isNaN(n))
+    return fallback;
+  return Math.max(0, Math.round(n));
+}
+
+export function lateExcuseMinutes(shift) {
+  return minutesSetting(shift?.lateExcuseMinutes, DEFAULT_LATE_EXCUSE_MINUTES);
+}
+
+export function dayWindowMinutes(shift) {
+  return minutesSetting(shift?.dayWindowMinutes, DEFAULT_DAY_WINDOW_MINUTES);
+}
+
+export function dayRules(shift) {
   const s = shift || DEFAULT_SHIFT;
-  return Math.max(0, shiftWorkingMinutes(s) - (Number(s.graceAfterMinutes) || 0));
+  const working = shiftWorkingMinutes(s);
+  const half = Math.round(working / 2);
+  const excuse = lateExcuseMinutes(s);
+  const window = dayWindowMinutes(s);
+  return {
+    workingMinutes: working,
+    lateExcuseMinutes: excuse,
+    dayWindowMinutes: window,
+    fullDayMinutes: Math.max(0, working - excuse),
+    halfDayMinutes: Math.max(0, half - window),
+    otHalfMinutes: Math.max(1, half - window),
+    otFullMinutes: Math.max(1, working - window),
+    otHalfCredit: half, // minutes "used up" by a half-day OT
+    otFullCredit: working, // minutes "used up" by a full-day OT
+  };
+}
+
+// Kept for older imports.
+export function requiredMinutesForFullDay(shift) {
+  return dayRules(shift).fullDayMinutes;
+}
+
+// Splits the worked minutes of a completed day into status / OT / balance.
+export function classifyWorkedDay(workingMinutes, shift) {
+  const r = dayRules(shift);
+  const w = Math.max(0, Number(workingMinutes) || 0);
+  const status = w >= r.fullDayMinutes ? "PRESENT" : "HALF_DAY";
+  const extra = Math.max(0, w - r.workingMinutes);
+
+  let otDays = 0;
+  let otCredit = 0;
+  if (extra >= r.otFullMinutes) {
+    otDays = 1;
+    otCredit = Math.min(extra, r.otFullCredit);
+  } else if (extra >= r.otHalfMinutes) {
+    otDays = 0.5;
+    otCredit = Math.min(extra, r.otHalfCredit);
+  }
+
+  return {
+    status,
+    overtimeMinutes: extra, // all hours beyond the shift length
+    otDays, // 0 / 0.5 / 1
+    extraMinutes: extra - otCredit, // not enough for OT -> monthly balance
+    shortMinutes: Math.max(0, r.workingMinutes - w), // below the shift length
+  };
 }
 
 // Compact, client-friendly description of a shift.
 export function shiftSummary(shift, source = null) {
   const s = shift || DEFAULT_SHIFT;
+  const r = dayRules(s);
   return {
     id: s.id || null,
     name: s.name,
@@ -198,8 +287,13 @@ export function shiftSummary(shift, source = null) {
     endTime: s.endTime,
     breakMinutes: Number(s.breakMinutes) || 0,
     graceAfterMinutes: Number(s.graceAfterMinutes) || 0,
-    totalWorkingMinutes: shiftWorkingMinutes(s),
-    fullDayMinutes: requiredMinutesForFullDay(s),
+    totalWorkingMinutes: r.workingMinutes,
+    lateExcuseMinutes: r.lateExcuseMinutes,
+    dayWindowMinutes: r.dayWindowMinutes,
+    fullDayMinutes: r.fullDayMinutes,
+    halfDayMinutes: r.halfDayMinutes,
+    otHalfMinutes: r.otHalfMinutes,
+    otFullMinutes: r.otFullMinutes,
     source,
   };
 }
@@ -207,27 +301,50 @@ export function shiftSummary(shift, source = null) {
 // ----------------------------------------------------------------------------
 // Which "shift day" a punch belongs to.
 //
-// Same-day shift: the IST calendar date of the punch.
-// Overnight shift (e.g. 20:00 -> 08:00): the off-duty gap runs from the end
-// time to the start time (08:00 -> 20:00). Punches before the middle of that
-// gap (14:00 here) are the tail of the PREVIOUS evening's shift, so a 07:55
-// punch-out completes last night's row instead of opening a new one.
+// The off-duty gap runs from shift end to the next shift start. Punches in
+// the first THREE QUARTERS of that gap still belong to the shift that just
+// ended (that's where overtime happens); only the last quarter counts as
+// arriving early for the next shift.
+//
+//   8 AM – 8 PM shift: gap 8 PM -> 8 AM (12h). Cut-off 5 AM.
+//     A 2:10 AM punch-out after half-day OT stays on the previous day;
+//     a 7:40 AM punch is an early arrival for today.
+//   8 PM – 8 AM (night): gap 8 AM -> 8 PM. Cut-off 5 PM — a 7:55 AM or 2 PM
+//     punch-out completes last night's row.
 // ----------------------------------------------------------------------------
+export function offDutyCutoffMinutes(shift) {
+  const start = timeStringToMinutes(shift?.startTime);
+  if (start === null) return 0;
+  const gap = 1440 - shiftSpanMinutes(shift);
+  return (((start - Math.floor(gap / 4)) % 1440) + 1440) % 1440;
+}
+
 export function resolveAttendanceDate(punchDateTime, shift) {
   const day = istDateKey(punchDateTime);
-  if (!isOvernightShift(shift)) return day;
+  const start = timeStringToMinutes(shift?.startTime);
+  const end = timeStringToMinutes(shift?.endTime);
+  if (start === null || end === null) return day;
 
-  const start = timeStringToMinutes(shift.startTime);
-  const end = timeStringToMinutes(shift.endTime);
-  const cutoff = end + Math.floor((start - end) / 2);
-  return istMinutesOfDay(punchDateTime) < cutoff ? addDays(day, -1) : day;
+  const cutoff = offDutyCutoffMinutes(shift);
+  const t = istMinutesOfDay(punchDateTime);
+  if (isOvernightShift(shift)) {
+    // e.g. 20:00-08:00, cutoff 17:00: before 17:00 = last night's shift.
+    return t < cutoff ? addDays(day, -1) : day;
+  }
+  // Same-day shift: only after-midnight punches before the cutoff (and
+  // only when the cutoff itself is in the morning, before the shift start).
+  return cutoff < start && t < cutoff ? addDays(day, -1) : day;
 }
 
 // Scheduled start/end instants of the shift for a given shift day.
 export function shiftWindowForDate(dateKey, shift) {
   const start = timeStringToMinutes(shift?.startTime) ?? 0;
-  const shiftStart = new Date(istDayStartInstant(dateKey).getTime() + start * MINUTE_MS);
-  const shiftEnd = new Date(shiftStart.getTime() + shiftSpanMinutes(shift) * MINUTE_MS);
+  const shiftStart = new Date(
+    istDayStartInstant(dateKey).getTime() + start * MINUTE_MS,
+  );
+  const shiftEnd = new Date(
+    shiftStart.getTime() + shiftSpanMinutes(shift) * MINUTE_MS,
+  );
   return { shiftStart, shiftEnd };
 }
 
@@ -238,13 +355,28 @@ export function shiftWindowForDate(dateKey, shift) {
 //   no punch                                   -> ABSENT
 //   punched in, no valid punch-out             -> HALF_DAY (shown as
 //                                                 "No punch-out" in the UI)
-//   worked >= shift working hours (− grace)    -> PRESENT
+//   worked >= shift hours − late/early excuse  -> PRESENT
 //   worked less than that                      -> HALF_DAY
+//   (overtime: see classifyWorkedDay above)
 // ----------------------------------------------------------------------------
-export function computeAttendanceMetrics(firstPunch, lastPunch, shift = DEFAULT_SHIFT, shiftDay = null) {
+export function computeAttendanceMetrics(
+  firstPunch,
+  lastPunch,
+  shift = DEFAULT_SHIFT,
+  shiftDay = null,
+) {
   const s = shift || DEFAULT_SHIFT;
   if (!firstPunch) {
-    return { workingMinutes: 0, lateMinutes: 0, earlyExitMinutes: 0, overtimeMinutes: 0, status: "ABSENT" };
+    return {
+      workingMinutes: 0,
+      lateMinutes: 0,
+      earlyExitMinutes: 0,
+      overtimeMinutes: 0,
+      otDays: 0,
+      extraMinutes: 0,
+      shortMinutes: 0,
+      status: "ABSENT",
+    };
   }
 
   const first = new Date(firstPunch);
@@ -253,43 +385,77 @@ export function computeAttendanceMetrics(firstPunch, lastPunch, shift = DEFAULT_
 
   // Late: punching in after (shift start + grace-after).
   const graceAfter = Number(s.graceAfterMinutes) || 0;
-  const onTimeDeadline = new Date(shiftStart.getTime() + graceAfter * MINUTE_MS);
-  const lateMinutes = first > onTimeDeadline ? minutesBetween(onTimeDeadline, first) : 0;
+  const onTimeDeadline = new Date(
+    shiftStart.getTime() + graceAfter * MINUTE_MS,
+  );
+  const lateMinutes =
+    first > onTimeDeadline ? minutesBetween(onTimeDeadline, first) : 0;
 
   if (!lastPunch) {
-    return { workingMinutes: 0, lateMinutes, earlyExitMinutes: 0, overtimeMinutes: 0, status: "HALF_DAY" };
+    return {
+      workingMinutes: 0,
+      lateMinutes,
+      earlyExitMinutes: 0,
+      overtimeMinutes: 0,
+      otDays: 0,
+      extraMinutes: 0,
+      shortMinutes: 0,
+      status: "HALF_DAY",
+    };
   }
 
   const last = new Date(lastPunch);
   const rawWorkingMinutes = minutesBetween(first, last);
-  const workingMinutes = Math.max(0, rawWorkingMinutes - (Number(s.breakMinutes) || 0));
+  const workingMinutes = Math.max(
+    0,
+    rawWorkingMinutes - (Number(s.breakMinutes) || 0),
+  );
 
   const earlyExitMinutes = last < shiftEnd ? minutesBetween(last, shiftEnd) : 0;
 
-  const otBuffer = Number(s.overtimeAfterMinutes) || 0;
-  const otThreshold = new Date(shiftEnd.getTime() + otBuffer * MINUTE_MS);
-  const overtimeMinutes = last > otThreshold ? minutesBetween(otThreshold, last) : 0;
+  // Overtime = hours worked beyond the shift length (late login is not
+  // rewarded with OT just for leaving late).
+  const c = classifyWorkedDay(workingMinutes, s);
 
-  const status = workingMinutes >= requiredMinutesForFullDay(s) ? "PRESENT" : "HALF_DAY";
-
-  return { workingMinutes, lateMinutes, earlyExitMinutes, overtimeMinutes, status };
+  return {
+    workingMinutes,
+    lateMinutes,
+    earlyExitMinutes,
+    overtimeMinutes: c.overtimeMinutes,
+    otDays: c.otDays,
+    extraMinutes: c.extraMinutes,
+    shortMinutes: c.shortMinutes,
+    status: c.status,
+  };
 }
 
 // Builds a full day from every raw punch of that shift day:
 // first punch = punch-in, latest punch = punch-out (if far enough apart).
 export function buildDayFromPunches(punchTimes, shift, dateKey) {
-  const times = [...new Set((punchTimes || []).filter(Boolean).map((t) => new Date(t).getTime()))]
+  const times = [
+    ...new Set(
+      (punchTimes || []).filter(Boolean).map((t) => new Date(t).getTime()),
+    ),
+  ]
     .filter((t) => !Number.isNaN(t))
     .sort((a, b) => a - b)
     .map((t) => new Date(t));
 
   if (!times.length) {
-    return { firstPunch: null, lastPunch: null, punchCount: 0, ...computeAttendanceMetrics(null, null, shift, dateKey) };
+    return {
+      firstPunch: null,
+      lastPunch: null,
+      punchCount: 0,
+      ...computeAttendanceMetrics(null, null, shift, dateKey),
+    };
   }
 
   const firstPunch = times[0];
   const latest = times[times.length - 1];
-  const lastPunch = minutesBetween(firstPunch, latest) >= MIN_PUNCH_OUT_GAP_MINUTES ? latest : null;
+  const lastPunch =
+    minutesBetween(firstPunch, latest) >= MIN_PUNCH_OUT_GAP_MINUTES
+      ? latest
+      : null;
 
   return {
     firstPunch,
@@ -313,15 +479,21 @@ export function buildDayFromPunches(punchTimes, shift, dateKey) {
 export function resolveShift(ctx, person, dateKey) {
   const t = new Date(dateKey).getTime();
   const covers = (from, to) =>
-    (!from || new Date(from).getTime() <= t) && (!to || new Date(to).getTime() >= t);
+    (!from || new Date(from).getTime() <= t) &&
+    (!to || new Date(to).getTime() >= t);
   const byId = (id) => (id && ctx?.shiftsById?.get(id)) || null;
 
-  const employee = person?.employeeId ? ctx?.employeesById?.get(person.employeeId) : null;
+  const employee = person?.employeeId
+    ? ctx?.employeesById?.get(person.employeeId)
+    : null;
 
   if (person?.employeeId) {
     const history = ctx?.historyByEmployee?.get(person.employeeId) || [];
-    const match = history.find((h) => h.effectiveFrom && covers(h.effectiveFrom, h.effectiveTo));
-    if (match && byId(match.newShiftId)) return { shift: byId(match.newShiftId), source: "ASSIGNMENT" };
+    const match = history.find(
+      (h) => h.effectiveFrom && covers(h.effectiveFrom, h.effectiveTo),
+    );
+    if (match && byId(match.newShiftId))
+      return { shift: byId(match.newShiftId), source: "ASSIGNMENT" };
 
     if (
       !match &&
@@ -333,10 +505,115 @@ export function resolveShift(ctx, person, dateKey) {
     }
   }
 
-  if (byId(person?.mappingShiftId)) return { shift: byId(person.mappingShiftId), source: "MAPPING" };
-  if (employee?.shiftId && byId(employee.shiftId)) return { shift: byId(employee.shiftId), source: "CURRENT" };
+  if (byId(person?.mappingShiftId))
+    return { shift: byId(person.mappingShiftId), source: "MAPPING" };
+  if (employee?.shiftId && byId(employee.shiftId))
+    return { shift: byId(employee.shiftId), source: "CURRENT" };
 
   return { shift: DEFAULT_SHIFT, source: "DEFAULT" };
+}
+
+// ----------------------------------------------------------------------------
+// Week-off rules
+//
+// The hospital runs every day — no fixed Sunday off and no holidays. Instead
+// each person gets a number of WEEK-OFFS PER MONTH:
+//   * Ward boys & housekeeping: 2 (default)
+//   * Everyone else:            4 (default)
+// Both are editable from the "Week-offs" settings tab.
+//
+// Each month, the first N days a person doesn't punch (or is marked on leave)
+// are shown as WEEK OFF. Only the days beyond N are shown as LEAVE.
+//
+// Group matching ignores case, spaces and punctuation, so "Ward boy",
+// "WARD BOY", "Wardboy" and "ward-boy" all match the keyword "Ward Boy".
+// ----------------------------------------------------------------------------
+
+export const DEFAULT_WEEK_OFFS_PER_MONTH = 4;
+export const MAX_WEEK_OFFS_PER_MONTH = 15;
+
+export const DEFAULT_WEEK_OFF_POLICY = {
+  defaultWeekOffs: DEFAULT_WEEK_OFFS_PER_MONTH,
+  groups: [
+    {
+      id: "ward-housekeeping",
+      name: "Ward Boy & Housekeeping",
+      keywords: ["Ward Boy", "Housekeeping"],
+      weekOffs: 2,
+    },
+  ],
+};
+
+// "Ward Boy" / "WARD-BOY" / "wardboy" -> "wardboy"
+export function normalizeMatchText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function clampWeekOffs(value, fallback) {
+  const n = Number(value);
+  if (value === "" || value === null || value === undefined || Number.isNaN(n))
+    return fallback;
+  return Math.min(MAX_WEEK_OFFS_PER_MONTH, Math.max(0, Math.round(n)));
+}
+
+// Cleans whatever was stored / sent into a safe policy object.
+export function sanitizeWeekOffPolicy(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const groups = (Array.isArray(src.groups) ? src.groups : [])
+    .map((g, i) => {
+      const keywords = (
+        Array.isArray(g?.keywords)
+          ? g.keywords
+          : String(g?.keywords ?? "").split(",")
+      )
+        .map((k) => String(k).trim())
+        .filter((k) => normalizeMatchText(k));
+      return {
+        id: String(g?.id || `group-${i + 1}`),
+        name: String(g?.name || "").trim() || `Group ${i + 1}`,
+        keywords: [
+          ...new Map(keywords.map((k) => [normalizeMatchText(k), k])).values(),
+        ],
+        weekOffs: clampWeekOffs(g?.weekOffs, DEFAULT_WEEK_OFFS_PER_MONTH),
+      };
+    })
+    .filter((g) => g.keywords.length);
+
+  return {
+    defaultWeekOffs: clampWeekOffs(
+      src.defaultWeekOffs,
+      DEFAULT_WEEK_OFFS_PER_MONTH,
+    ),
+    groups,
+  };
+}
+
+// Which rule applies to a person. Looks at designation, department and (for
+// staff logins) role. First matching group wins.
+export function weekOffRuleFor(policy, { designation, department, role } = {}) {
+  const p = policy || DEFAULT_WEEK_OFF_POLICY;
+  const haystacks = [designation, department, role]
+    .map(normalizeMatchText)
+    .filter(Boolean);
+  for (const g of p.groups || []) {
+    const hit = (g.keywords || []).some((k) => {
+      const key = normalizeMatchText(k);
+      return key && haystacks.some((h) => h.includes(key));
+    });
+    if (hit) return { groupId: g.id, name: g.name, perMonth: g.weekOffs };
+  }
+  return { groupId: null, name: "Everyone else", perMonth: p.defaultWeekOffs };
+}
+
+export function monthKeyOf(dateKey) {
+  return dateKeyToString(dateKey).slice(0, 7); // "2026-10"
+}
+
+export function startOfMonthKey(dateKey) {
+  const d = new Date(dateKey);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
 // ----------------------------------------------------------------------------
@@ -350,9 +627,15 @@ export function toSafeDevice(device) {
 // "2026-10-05" -> UTC midnight of that date (an attendance date key).
 export function parseDateOnly(value) {
   if (!value) return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : istDateKey(value);
-  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (match) return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (value instanceof Date)
+    return Number.isNaN(value.getTime()) ? null : istDateKey(value);
+  const match = String(value)
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match)
+    return new Date(
+      Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+    );
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : istDateKey(d);
 }
@@ -374,7 +657,8 @@ export function pagination(query) {
 // A real +05:30 offset is honoured as given.
 export function parseIST(value) {
   if (value === null || value === undefined || value === "") return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (value instanceof Date)
+    return Number.isNaN(value.getTime()) ? null : value;
 
   const str = String(value).trim();
   const toInstant = (y, mo, d, hh, mm, ss, ampm) => {
@@ -385,23 +669,40 @@ export function parseIST(value) {
       else if (pm) hours += 12;
     }
     return new Date(
-      Date.UTC(Number(y), Number(mo) - 1, Number(d), hours, Number(mm), Number(ss || 0)) - IST_OFFSET_MS
+      Date.UTC(
+        Number(y),
+        Number(mo) - 1,
+        Number(d),
+        hours,
+        Number(mm),
+        Number(ss || 0),
+      ) - IST_OFFSET_MS,
     );
   };
 
   // Optional fractional seconds, optional AM/PM, optional zone suffix.
   const TIME = String.raw`(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?\s*([AaPp][Mm])?\s*(Z|[+-]\d{2}:?\d{2})?`;
 
-  const ymd = str.match(new RegExp(String.raw`^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})[ T]+` + TIME + "$"));
+  const ymd = str.match(
+    new RegExp(
+      String.raw`^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})[ T]+` + TIME + "$",
+    ),
+  );
   if (ymd) {
     const [, y, mo, d, hh, mm, ss, ampm, zone] = ymd;
     if (zone && /^\+05:?30$/.test(zone)) {
-      return new Date(Date.UTC(+y, +mo - 1, +d, +hh, +mm, +(ss || 0)) - IST_OFFSET_MS);
+      return new Date(
+        Date.UTC(+y, +mo - 1, +d, +hh, +mm, +(ss || 0)) - IST_OFFSET_MS,
+      );
     }
     return toInstant(y, mo, d, hh, mm, ss, ampm);
   }
 
-  const dmy = str.match(new RegExp(String.raw`^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})[ T]+` + TIME + "$"));
+  const dmy = str.match(
+    new RegExp(
+      String.raw`^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})[ T]+` + TIME + "$",
+    ),
+  );
   if (dmy) {
     const [, d, mo, y, hh, mm, ss, ampm] = dmy;
     return toInstant(y, mo, d, hh, mm, ss, ampm);
@@ -420,7 +721,8 @@ export function normalizePunchInstant(punch, receivedAt = new Date()) {
   const p = new Date(punch).getTime();
   const r = new Date(receivedAt).getTime();
   const slack = 15 * MINUTE_MS;
-  if (p > r + slack && p - IST_OFFSET_MS <= r + slack) return new Date(p - IST_OFFSET_MS);
+  if (p > r + slack && p - IST_OFFSET_MS <= r + slack)
+    return new Date(p - IST_OFFSET_MS);
   return new Date(p);
 }
 
