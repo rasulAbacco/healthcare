@@ -38,12 +38,12 @@ function isSingleInvoiceType(t) {
 // Thrown for pharmacy-stock problems hit while saving a PHARMACY invoice
 // (missing medicine, not enough stock left). Caught separately so the route
 // can answer 400 instead of a generic 500.
-class StockError extends Error {}
+class StockError extends Error { }
 
 // Thrown for bad invoice data that the caller can fix (an unparseable line
 // date, a negative quantity). Also mapped to a 400, with a message safe to
 // show to the user as-is.
-class ValidationError extends Error {}
+class ValidationError extends Error { }
 
 function toNum(v) {
   const n = parseFloat(v);
@@ -276,6 +276,74 @@ function totalsFromPayments(invoice, payments) {
     paid,
     balance: round2(invoice.grandTotal - (paid - refundAmount)),
   };
+}
+
+// Brings a payment list into line with the "Paid" figure the user typed in
+// the invoice form.
+//
+// WHY THIS EXISTS
+//   normaliseTotals takes `paid` from the SUM of the payment list whenever
+//   the list is non-empty. So an invoice created with ₹1,000 paid carries one
+//   ₹1,000 entry; editing the form's Paid box to ₹1,233 the next day changed
+//   nothing — the list still summed to ₹1,000, and that won. The bill kept
+//   showing ₹1,000 paid / ₹233 pending.
+//
+// WHAT IT DOES
+//   - Paid not sent            -> list untouched (old behaviour).
+//   - Paid > list total        -> the difference is appended as a NEW dated
+//                                 payment (e.g. ₹233 received today), so the
+//                                 history shows both instalments.
+//   - Paid < list total        -> the excess is taken back off the NEWEST
+//                                 entries first (fixing a mis-typed amount).
+//   - Paid == list total       -> list untouched.
+function reconcilePaymentsWithPaid(
+  payments,
+  rawPaid,
+  { method, receivedById, receivedByName } = {},
+) {
+  if (rawPaid === undefined || rawPaid === null || rawPaid === "") {
+    return payments;
+  }
+
+  const target = round2(toNum(rawPaid));
+  if (target < 0) {
+    throw new ValidationError("Paid amount cannot be negative.");
+  }
+
+  const current = paymentsTotal(payments);
+  const diff = round2(target - current);
+  if (diff === 0) return payments;
+
+  if (diff > 0) {
+    return [
+      ...payments,
+      normalizePaymentEntry({
+        amount: diff,
+        method: PAYMENT_METHOD_VALUES.includes(method) ? method : "Cash",
+        paymentDate: new Date(),
+        notes: "Additional payment recorded while editing the invoice.",
+        receivedById,
+        receivedByName,
+      }),
+    ];
+  }
+
+  // Paid was lowered — remove the excess from the most recent entries.
+  let excess = round2(-diff);
+  const sorted = [...payments].sort(
+    (a, b) => new Date(a.paymentDate) - new Date(b.paymentDate),
+  );
+  for (let i = sorted.length - 1; i >= 0 && excess > 0; i--) {
+    const amt = round2(toNum(sorted[i]?.amount));
+    if (amt <= excess) {
+      excess = round2(excess - amt);
+      sorted.splice(i, 1);
+    } else {
+      sorted[i] = { ...sorted[i], amount: round2(amt - excess) };
+      excess = 0;
+    }
+  }
+  return sorted;
 }
 
 // Applies the pharmacy-stock impact of a PHARMACY invoice's line items —
@@ -664,6 +732,14 @@ export async function createInvoice(req, res) {
       ];
     }
 
+    // If the caller sent BOTH a payment list and a Paid figure that
+    // disagree, the Paid box the user typed in wins.
+    payments = reconcilePaymentsWithPaid(payments, req.body.paid, {
+      method: paymentMethod,
+      receivedById: resolvedCreatedById,
+      receivedByName: resolvedCreatedByName,
+    });
+
     const totals = normaliseTotals({ ...req.body, payments });
 
     const data = {
@@ -755,13 +831,21 @@ export async function updateInvoice(req, res) {
 
     const normalizedItems = normalizeLineItems(lineItems);
 
-    // Payments already recorded against this invoice stay authoritative
-    // unless the caller explicitly sends a replacement list. Without this,
-    // editing a line item would wipe a part-payment history with whatever
-    // the form happened to be holding.
-    const payments = Array.isArray(req.body.payments)
+    // Start from the payments already recorded (or the replacement list the
+    // caller sent). withOpeningPayment turns the `paid` of an invoice saved
+    // before part-payments existed into a real entry, so it isn't lost.
+    const basePayments = Array.isArray(req.body.payments)
       ? req.body.payments.map(normalizePaymentEntry)
-      : readPayments(existing);
+      : withOpeningPayment(existing);
+
+    // THE FIX: if the user changed the Paid box (e.g. ₹1,000 -> ₹1,233), the
+    // ₹233 difference is recorded as a new payment instead of being thrown
+    // away because the old list still summed to ₹1,000.
+    const payments = reconcilePaymentsWithPaid(basePayments, req.body.paid, {
+      method: paymentMethod,
+      receivedById: req.user?.id || req.body.receivedById || null,
+      receivedByName: req.user?.fullName || req.body.receivedByName || null,
+    });
 
     const data = {
       lineItems: normalizedItems,
@@ -1089,9 +1173,8 @@ export async function markInvoiceReturn(req, res) {
             date: new Date(),
             action: "ADD",
             quantity: u.qty,
-            reason: `Returned by patient — Invoice ${invoice.invoiceNumber}${
-              u.description ? ` (${u.description})` : ""
-            }`,
+            reason: `Returned by patient — Invoice ${invoice.invoiceNumber}${u.description ? ` (${u.description})` : ""
+              }`,
           },
         });
       }
